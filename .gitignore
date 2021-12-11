@@ -1,0 +1,6 @@
+dll/
+include/
+lib/
+out/
+CMakeSettings.json
+.vs/
