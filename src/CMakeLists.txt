@@ -1,6 +1,7 @@
 add_subdirectory(Systems)
 add_subdirectory(Managers)
 add_subdirectory(Components)
+add_subdirectory(Utility)
 
 add_library(src "World.cpp" "Entities.cpp")
 

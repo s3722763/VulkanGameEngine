@@ -1,4 +1,5 @@
 #include "VulkanPipeline.hpp"
+#include "VulkanPipeline.hpp"
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -16,7 +17,25 @@ std::string PipelineBuilder::readFile(const char* filepath) {
 
 	file.seekg(0);
 	file.read(buffer.data(), filesize);
+	
+	file.close();
 
+	return buffer;
+}
+
+std::vector<char> PipelineBuilder::readCompiledFile(const char* filepath) {
+	std::ifstream file(filepath, std::ios::ate | std::ios::binary);
+
+	if (!file.is_open()) {
+		std::cout << "Could not open file: " << filepath << std::endl;
+		abort();
+	}
+
+	size_t filesize = static_cast<size_t>(file.tellg());
+	std::vector<char> buffer(filesize);
+
+	file.seekg(0);
+	file.read(buffer.data(), filesize);
 	file.close();
 
 	return buffer;
@@ -40,8 +59,13 @@ std::vector<uint32_t> PipelineBuilder::compileShader(const std::string& name, sh
 }
 
 
-VkShaderModule PipelineBuilder::createShaderModule(VkDevice device, std::string name, shaderc_shader_kind kind, std::string code) {
+VkShaderModule PipelineBuilder::createShaderModule(VkDevice device, std::string name, shaderc_shader_kind kind, std::string code, std::string path) {
 	auto spirv = this->compileShader(name, kind, code, false);
+
+	// As compiling again, delete old file and save new one
+	std::ofstream file(path, std::ios::trunc | std::ios::binary);
+	file.write(reinterpret_cast<const char*>(spirv.data()), spirv.size() * sizeof(uint32_t));
+	file.close();
 
 	VkShaderModuleCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -57,21 +81,62 @@ VkShaderModule PipelineBuilder::createShaderModule(VkDevice device, std::string 
 	return shaderModule;
 }
 
+VkShaderModule PipelineBuilder::createShaderModule(VkDevice device, std::string name, shaderc_shader_kind kind, std::vector<char>&& spirv) {
+	VkShaderModuleCreateInfo createInfo{};
+	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	// Size in bytes
+	createInfo.codeSize = spirv.size();
+	createInfo.pCode = reinterpret_cast<const uint32_t*>(spirv.data());
+
+	VkShaderModule shaderModule;
+
+	vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
+
+	return shaderModule;
+}
+
 void PipelineBuilder::addShaders(VkDevice device, ShaderInfo* shaderInfo) {
 	this->shaderStages.clear();
 
 	if (shaderInfo->flags & VkShaderStageFlagBits::VK_SHADER_STAGE_VERTEX_BIT) {
-		auto vertexCode = this->readFile(shaderInfo->vertexShaderPath);
-		auto vertexShaderModule = this->createShaderModule(device, "vertexShader", shaderc_vertex_shader, vertexCode);
-		auto shaderStageCreateInfo = VulkanUtility::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT, vertexShaderModule);
-		this->shaderStages.push_back(shaderStageCreateInfo);
+		std::string shaderVertexPath = shaderInfo->vertexShaderPath;
+		auto shaderCompiledPath = shaderVertexPath + ".spv";
+
+		if (!std::filesystem::exists(shaderCompiledPath) || std::filesystem::last_write_time(shaderInfo->vertexShaderPath) > std::filesystem::last_write_time(shaderCompiledPath)) {
+			// Need to compile
+			std::cout << "Compiling vertex shader: " << shaderVertexPath << std::endl;
+			auto vertexCode = this->readFile(shaderInfo->vertexShaderPath);
+
+			auto vertexShaderModule = this->createShaderModule(device, "vertexShader", shaderc_vertex_shader, vertexCode, shaderCompiledPath);
+			auto shaderStageCreateInfo = VulkanUtility::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT, vertexShaderModule);
+			this->shaderStages.push_back(shaderStageCreateInfo);
+		} else {
+			std::cout << "Reading compiled vertex shader: " << shaderCompiledPath << std::endl;
+			auto vertexCode = this->readCompiledFile(shaderCompiledPath.c_str());
+			auto vertexShaderModule = this->createShaderModule(device, "vertexShader", shaderc_vertex_shader, std::move(vertexCode));
+			auto shaderStageCreateInfo = VulkanUtility::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_VERTEX_BIT, vertexShaderModule);
+			this->shaderStages.push_back(shaderStageCreateInfo);
+		}
 	}
 
 	if (shaderInfo->flags & VkShaderStageFlagBits::VK_SHADER_STAGE_FRAGMENT_BIT) {
-		auto fragmentCode = this->readFile(shaderInfo->fragmentShaderPath);
-		auto fragmentShaderModule = this->createShaderModule(device, "fragmentShader", shaderc_fragment_shader, fragmentCode);
-		auto shaderStageCreateInfo = VulkanUtility::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShaderModule);
-		this->shaderStages.push_back(shaderStageCreateInfo);
+		std::string shaderFragmentPath = shaderInfo->fragmentShaderPath;
+		auto shaderCompiledPath = shaderFragmentPath + ".spv";
+
+		if (!std::filesystem::exists(shaderCompiledPath) || std::filesystem::last_write_time(shaderInfo->fragmentShaderPath) > std::filesystem::last_write_time(shaderCompiledPath)) {
+			std::cout << "Compiling fragment shader: " << shaderFragmentPath << std::endl;
+			auto fragmentCode = this->readFile(shaderInfo->fragmentShaderPath);
+			auto fragmentShaderModule = this->createShaderModule(device, "fragmentShader", shaderc_fragment_shader, fragmentCode, shaderCompiledPath);
+			auto shaderStageCreateInfo = VulkanUtility::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShaderModule);
+			this->shaderStages.push_back(shaderStageCreateInfo);
+		} else {
+			std::cout << "Reading compiled fragment shader: " << shaderCompiledPath << std::endl;
+			auto fragmentCode = this->readCompiledFile(shaderCompiledPath.c_str());
+			auto fragmentShaderModule = this->createShaderModule(device, "fragmentShader", shaderc_fragment_shader, std::move(fragmentCode));
+			auto shaderStageCreateInfo = VulkanUtility::pipelineShaderStageCreateInfo(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShaderModule);
+			this->shaderStages.push_back(shaderStageCreateInfo);
+		}
 	}
 }
 

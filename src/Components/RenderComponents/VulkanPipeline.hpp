@@ -14,6 +14,7 @@ class Pipeline {
 public:
 	VkPipeline pipeline;
 	VkPipelineCache cache;
+
 	const char* name = nullptr;
 
 	void readPipelineCacheFile(VkDevice device);
@@ -23,8 +24,10 @@ public:
 class PipelineBuilder {
 private:
 	std::string readFile(const char* filepath);
+	std::vector<char> readCompiledFile(const char* filepath);
 	std::vector<uint32_t> compileShader(const std::string& name, shaderc_shader_kind kind, const std::string& source, bool optimise);
-	VkShaderModule createShaderModule(VkDevice device, std::string name, shaderc_shader_kind kind, std::string code);
+	VkShaderModule createShaderModule(VkDevice device, std::string name, shaderc_shader_kind kind, std::string code, std::string path);
+	VkShaderModule createShaderModule(VkDevice device, std::string name, shaderc_shader_kind kind, std::vector<char>&& spirv);
 
 public:
 	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;

@@ -1,4 +1,5 @@
 #include "VulkanRenderer.hpp"
+#include "VulkanRenderer.hpp"
 
 #include "VulkanUtility.hpp"
 #include <iostream>
@@ -913,6 +914,10 @@ void VulkanRenderer::cleanup() {
 	trianglePipeline.writePipelineCacheFile(this->device, true);
 
 	this->mainDeletionQueue.flush();
+}
+
+void VulkanRenderer::initialisePhongPipeline() {
+
 }
 
 VmaAllocator VulkanRenderer::getVmaAllocator() {

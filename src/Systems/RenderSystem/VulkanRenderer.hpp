@@ -114,6 +114,8 @@ class VulkanRenderer {
 	void initialisePipelines();
 	void initialiseDescriptors();
 
+	void initialisePhongPipeline();
+
 	void drawObjects(VkCommandBuffer cmd, std::vector<ModelRenderComponents>* modelRenderComponents, std::vector<ModelResource>* modelResourceIds, std::vector<size_t>* ids, Camera* camera);
 
 	size_t addMaterial(Material&& material, std::vector<AllocatedImage>* images);
