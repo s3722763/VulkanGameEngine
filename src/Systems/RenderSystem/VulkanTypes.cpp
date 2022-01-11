@@ -37,5 +37,21 @@ VertexInputDescription ModelVertexInputDescription::getVertexDescription() {
 
 	vertexInputDescription.attributes.push_back(textureCoordAttribute);
 
+	// Normal Attribute
+	VkVertexInputBindingDescription normalBinding{};
+	normalBinding.binding = 2;
+	normalBinding.stride = sizeof(glm::vec3);
+	normalBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+	vertexInputDescription.bindings.push_back(normalBinding);
+
+	VkVertexInputAttributeDescription normalAttribute{};
+	normalAttribute.binding = 2;
+	normalAttribute.location = 2;
+	normalAttribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+	normalAttribute.offset = 0;
+
+	vertexInputDescription.attributes.push_back(normalAttribute);
+
 	return vertexInputDescription;
 }

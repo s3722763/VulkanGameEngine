@@ -115,6 +115,14 @@ size_t VulkanResourceManager::loadModelComponentBuffers(std::string identifier, 
 		modelRenderComponents.TextureCoordBuffers.at(i) = newBuffer;
 	}
 
+	auto* meshNormals = &meshComponents->normals;
+
+	for (auto i = 0; i < numberOfMeshes; i++) {
+		auto* normals = &meshNormals->at(i);
+		AllocatedBuffer newBuffer = this->generateNewVertexBuffer(normals, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+		modelRenderComponents.NormalBuffers.at(i) = newBuffer;
+	}
+
 	auto* meshIndices = &meshComponents->indices;
 
 	for (auto i = 0; i < numberOfMeshes; i++) {

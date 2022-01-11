@@ -66,8 +66,8 @@ class VulkanRenderer {
 	//VkSemaphore presentSemaphore, renderSemaphore;
 	//VkFence renderFence;
 
-	VkPipelineLayout trianglePipelineLayout;
-	Pipeline trianglePipeline;
+	VkPipelineLayout phongPipelineLayout;
+	Pipeline phongPipeline;
 
 	// VMA
 	VmaAllocator allocator;
@@ -77,8 +77,9 @@ class VulkanRenderer {
 	//AllocatedImage depthImage;
 	VkFormat depthFormat;
 
-	VkDescriptorSetLayout globalSetLayout;
-	VkDescriptorSetLayout singleTextureSetLayout;
+	// 3 Sets - Scene, Material (Pipeline), model
+	VkDescriptorSetLayout sceneSetLayout;
+	VkDescriptorSetLayout modelSetLayout;
 	VkDescriptorPool descriptorPool;
 
 	DeletionQueue mainDeletionQueue;
@@ -112,7 +113,7 @@ class VulkanRenderer {
 	void initialiseFramebuffers();
 	void initialiseSyncStructures();
 	void initialisePipelines();
-	void initialiseDescriptors();
+	void initialiseGlobalDescriptors();
 
 	void initialisePhongPipeline();
 

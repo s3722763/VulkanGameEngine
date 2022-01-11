@@ -289,6 +289,7 @@ void VulkanRenderer::initialiseSyncStructures() {
 		});
 	}
 
+	fenceCreateInfo.flags &= ~(VK_FENCE_CREATE_SIGNALED_BIT);
 	result = vkCreateFence(this->device, &fenceCreateInfo, nullptr, &this->uploadContext.uploadFence);
 
 	if (result) {
@@ -310,80 +311,10 @@ void VulkanRenderer::initialiseSyncStructures() {
 }
 
 void VulkanRenderer::initialisePipelines() {
-	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = VulkanUtility::pipelineLayoutCreateInfo();
-
-	std::array<VkDescriptorSetLayout, 2> setLayouts = {
-		this->globalSetLayout,
-		this->singleTextureSetLayout
-	};
-
-	VkPushConstantRange pushConstant{};
-	pushConstant.offset = 0;
-	pushConstant.size = sizeof(PushConstants);
-	pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
-	pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-
-	pipelineLayoutCreateInfo.pSetLayouts = setLayouts.data();
-	pipelineLayoutCreateInfo.setLayoutCount = setLayouts.size();
-
-	VkResult result = vkCreatePipelineLayout(this->device, &pipelineLayoutCreateInfo, nullptr, &this->trianglePipelineLayout);
-	if (result) {
-		std::cout << "Detected Vulkan error while creating pipeline layout: " << result << std::endl;
-		abort();
-	}
-
-	// Setup shader information
-	ShaderInfo shaderInfo{};
-	shaderInfo.flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-	shaderInfo.vertexShaderPath = "resources/shaders/vertex.vert";
-	shaderInfo.fragmentShaderPath = "resources/shaders/fragment.frag";
-
-	PipelineBuilder pipelineBuilder;
-	pipelineBuilder.addShaders(this->device, &shaderInfo);
-
-	pipelineBuilder.vertexInputInfo = VulkanUtility::vertexInputStateCreateInfo();
-	pipelineBuilder.inputAssembly = VulkanUtility::inputAssemblyCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-	pipelineBuilder.viewport.x = 0.0f;
-	pipelineBuilder.viewport.y = 0.0f;
-	pipelineBuilder.viewport.width = WIDTH;
-	pipelineBuilder.viewport.height = HEIGHT;
-	pipelineBuilder.viewport.minDepth = 0.0f;
-	pipelineBuilder.viewport.maxDepth = 1.0f;
-
-	pipelineBuilder.scissor.offset = { 0, 0 };
-	pipelineBuilder.scissor.extent = { WIDTH, HEIGHT };
-
-	pipelineBuilder.rasterizer = VulkanUtility::rasterizationStateCreateInfo(VK_POLYGON_MODE_FILL);
-	pipelineBuilder.multisampling = VulkanUtility::multisamplingStateCreateInfo();
-	pipelineBuilder.colorBlendAttachment = VulkanUtility::colorBlendAttachmentState();
-
-	pipelineBuilder.pipelineLayout = this->trianglePipelineLayout;
-
-	// Setup vertex inputs
-	VertexInputDescription vertexDescription = ModelVertexInputDescription::getVertexDescription();
-	pipelineBuilder.vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
-	pipelineBuilder.vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
-
-	pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
-	pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
-
-	VkPipelineDepthStencilStateCreateInfo depthStencil = VulkanUtility::depthStencilCreateInfo(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-	pipelineBuilder.depthStencil = depthStencil;
-
-	this->trianglePipeline = pipelineBuilder.buildPipeline(this->device, this->renderPass);
-
-	this->mainDeletionQueue.pushFunction([=]() {
-		vkDestroyPipeline(this->device, this->trianglePipeline.pipeline, nullptr);
-		vkDestroyPipelineLayout(this->device, this->trianglePipelineLayout, nullptr);
-	});
-
-	VkSamplerCreateInfo samplerInfo = VulkanUtility::samplerCreateInfo(VK_FILTER_NEAREST);
-	vkCreateSampler(this->device, &samplerInfo, nullptr, &this->defaultSampler);
+	this->initialisePhongPipeline();
 }
 
-void VulkanRenderer::initialiseDescriptors() {
+void VulkanRenderer::initialiseGlobalDescriptors() {
 	VkDescriptorSetLayoutBinding cameraBufferBinding = VulkanUtility::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
 
 	VkDescriptorSetLayoutCreateInfo setInfo{};
@@ -394,18 +325,7 @@ void VulkanRenderer::initialiseDescriptors() {
 	setInfo.flags = 0;
 	setInfo.pBindings = &cameraBufferBinding;
 
-	vkCreateDescriptorSetLayout(this->device, &setInfo, nullptr, &this->globalSetLayout);
-
-	VkDescriptorSetLayoutBinding texture1Binding = VulkanUtility::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-
-	VkDescriptorSetLayoutCreateInfo texture1SetInfo{};
-	texture1SetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	texture1SetInfo.pNext = nullptr;
-	texture1SetInfo.bindingCount = 1;
-	texture1SetInfo.flags = 0;
-	texture1SetInfo.pBindings = &texture1Binding;
-
-	vkCreateDescriptorSetLayout(this->device, &texture1SetInfo, nullptr, &this->singleTextureSetLayout);
+	vkCreateDescriptorSetLayout(this->device, &setInfo, nullptr, &this->sceneSetLayout);
 
 	std::vector<VkDescriptorPoolSize> sizes = {
 		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10 },
@@ -424,8 +344,8 @@ void VulkanRenderer::initialiseDescriptors() {
 	vkCreateDescriptorPool(this->device, &poolInfo, nullptr, &this->descriptorPool);
 
 	this->mainDeletionQueue.pushFunction([=]() {
-		vkDestroyDescriptorSetLayout(this->device, this->globalSetLayout, nullptr);
-		vkDestroyDescriptorSetLayout(this->device, this->singleTextureSetLayout, nullptr);
+		vkDestroyDescriptorSetLayout(this->device, this->sceneSetLayout, nullptr);
+		//vkDestroyDescriptorSetLayout(this->device, this->phongTextureSetLayout, nullptr);
 		vkDestroyDescriptorPool(this->device, this->descriptorPool, nullptr);
 	});
 
@@ -438,7 +358,7 @@ void VulkanRenderer::initialiseDescriptors() {
 
 		allocInfo.descriptorPool = this->descriptorPool;
 		allocInfo.descriptorSetCount = 1;
-		allocInfo.pSetLayouts = &this->globalSetLayout;
+		allocInfo.pSetLayouts = &this->sceneSetLayout;
 
 		vkAllocateDescriptorSets(this->device, &allocInfo, &this->framedata.globalDescriptors[i]);
 
@@ -475,19 +395,20 @@ void VulkanRenderer::drawObjects(VkCommandBuffer cmd, std::vector<ModelRenderCom
 	memcpy(data, &cameraData, sizeof(GPUCameraData));
 	vmaUnmapMemory(this->allocator, this->framedata.cameraBuffers[this->getCurrentFrameIndex()].allocation);
 
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->trianglePipeline.pipeline);
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->trianglePipelineLayout, 0, 1, &this->framedata.globalDescriptors[this->getCurrentFrameIndex()], 0, nullptr);
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipeline.pipeline);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipelineLayout, 0, 1, &this->framedata.globalDescriptors[this->getCurrentFrameIndex()], 0, nullptr);
 
-	glm::vec3 modelPos = glm::vec3{ 5, -10, 0};
+	glm::vec3 modelPos = glm::vec3{ 0, 0, 0};
 	glm::mat4 meshMatrix = glm::translate(glm::mat4{1.0f}, modelPos);
 
 	PushConstants pushConstants{};
 	pushConstants.renderMatrix = meshMatrix;
 
-	vkCmdPushConstants(cmd, this->trianglePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
+	vkCmdPushConstants(cmd, this->phongPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
 	VkDeviceSize offset = 0;
-	std::array<VkDeviceSize, 2> offsets = {
+	std::array<VkDeviceSize, 3> offsets = {
+		offset,
 		offset,
 		offset
 	};
@@ -500,14 +421,15 @@ void VulkanRenderer::drawObjects(VkCommandBuffer cmd, std::vector<ModelRenderCom
 		auto* materialIds = &this->modelMaterials.at(resourceId.materialGroupId);
 
 		for (size_t i = 0; i < model.VertexPositionBuffers.size(); i++) {
-			std::array<VkBuffer, 2> vertexBuffers = {
+			std::array<VkBuffer, 3> vertexBuffers = {
 				model.VertexPositionBuffers[i].buffer,
-				model.TextureCoordBuffers[i].buffer
+				model.TextureCoordBuffers[i].buffer,
+				model.NormalBuffers[i].buffer
 			};
 
 			auto* material = &this->materials.at(materialIds->at(i));
 
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->trianglePipelineLayout, 1, 1, &material->materialDescriptorSet, 0, nullptr);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipelineLayout, 1, 1, &material->materialDescriptorSet, 0, nullptr);
 
 			vkCmdBindIndexBuffer(cmd, model.IndexBuffers[i].buffer, offset, VK_INDEX_TYPE_UINT32);
 			vkCmdBindVertexBuffers(cmd, 0, vertexBuffers.size(), vertexBuffers.data(), offsets.data());
@@ -522,7 +444,7 @@ size_t VulkanRenderer::addMaterial(Material&& material, std::vector<AllocatedIma
 	allocInfo.pNext = nullptr;
 	allocInfo.descriptorPool = this->descriptorPool;
 	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &this->singleTextureSetLayout;
+	allocInfo.pSetLayouts = &this->phongPipeline.pipelineSetLayout;
 
 	VkResult result = vkAllocateDescriptorSets(this->device, &allocInfo, &material.materialDescriptorSet);
 
@@ -706,7 +628,7 @@ void VulkanRenderer::initialise(const VulkanDetails* vulkanDetails, QueueDetails
 	this->initialiseDefaultRenderpass();
 	this->initialiseFramebuffers();
 	this->initialiseSyncStructures();
-	this->initialiseDescriptors();
+	this->initialiseGlobalDescriptors();
 	this->initialisePipelines();
 }
 
@@ -754,11 +676,11 @@ void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderCompone
 		abort();
 	}
 
-	VkClearValue clearValue;
-	float flash = std::abs(std::sin(static_cast<float>(this->framenumber) / 120.0f));
-	clearValue.color = { {0.0f, 0.0f, flash, 1.0f} };
+	VkClearValue clearValue{};
+	//float flash = std::abs(std::sin(static_cast<float>(this->framenumber) / 120.0f));
+	clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
 
-	VkClearValue depthClear;
+	VkClearValue depthClear{};
 	depthClear.depthStencil.depth = 1.0f;
 
 	// Begin main render pass
@@ -911,13 +833,91 @@ void VulkanRenderer::immediateSubmit(UploadContext uploadContext, std::function<
 
 void VulkanRenderer::cleanup() {
 	vkWaitForFences(this->device, this->framedata.renderFences.size(), this->framedata.renderFences.data(), true, 1000000000);
-	trianglePipeline.writePipelineCacheFile(this->device, true);
+	phongPipeline.writePipelineCacheFile(this->device, true);
 
 	this->mainDeletionQueue.flush();
 }
 
 void VulkanRenderer::initialisePhongPipeline() {
+	// Setup shader information
+	ShaderInfo shaderInfo{};
+	shaderInfo.flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+	shaderInfo.vertexShaderPath = "resources/shaders/vertex.vert";
+	shaderInfo.fragmentShaderPath = "resources/shaders/fragment.frag";
 
+	PipelineBuilder pipelineBuilder;
+	pipelineBuilder.addShaders(this->device, &shaderInfo);
+
+	pipelineBuilder.vertexInputInfo = VulkanUtility::vertexInputStateCreateInfo();
+	pipelineBuilder.inputAssembly = VulkanUtility::inputAssemblyCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	pipelineBuilder.viewport.x = 0.0f;
+	pipelineBuilder.viewport.y = 0.0f;
+	pipelineBuilder.viewport.width = WIDTH;
+	pipelineBuilder.viewport.height = HEIGHT;
+	pipelineBuilder.viewport.minDepth = 0.0f;
+	pipelineBuilder.viewport.maxDepth = 1.0f;
+
+	pipelineBuilder.scissor.offset = { 0, 0 };
+	pipelineBuilder.scissor.extent = { WIDTH, HEIGHT };
+
+	pipelineBuilder.rasterizer = VulkanUtility::rasterizationStateCreateInfo(VK_POLYGON_MODE_FILL);
+	pipelineBuilder.multisampling = VulkanUtility::multisamplingStateCreateInfo();
+	pipelineBuilder.colorBlendAttachment = VulkanUtility::colorBlendAttachmentState();
+
+	// Setup descriptor sets and push constrants
+	// Must create pipeline set layout with builder before creating pipeline layout
+	
+	// Phong diffuse texture
+	pipelineBuilder.addPipelineDescriptorBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+	auto pipelineSetLayout = pipelineBuilder.createPipelineSetLayout(this->device, FRAME_OVERLAP, this->descriptorPool);
+	
+	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = VulkanUtility::pipelineLayoutCreateInfo();
+
+	std::array<VkDescriptorSetLayout, 2> setLayouts = {
+		this->sceneSetLayout,
+		pipelineSetLayout
+	};
+
+	VkPushConstantRange pushConstant{};
+	pushConstant.offset = 0;
+	pushConstant.size = sizeof(PushConstants);
+	pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+	pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
+	pipelineLayoutCreateInfo.pSetLayouts = setLayouts.data();
+	pipelineLayoutCreateInfo.setLayoutCount = setLayouts.size();
+
+	VkResult result = vkCreatePipelineLayout(this->device, &pipelineLayoutCreateInfo, nullptr, &this->phongPipelineLayout);
+	if (result) {
+		std::cout << "Detected Vulkan error while creating pipeline layout: " << result << std::endl;
+		abort();
+	}
+
+	pipelineBuilder.pipelineLayout = this->phongPipelineLayout;
+
+	// Setup vertex inputs
+	VertexInputDescription vertexDescription = ModelVertexInputDescription::getVertexDescription();
+	pipelineBuilder.vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
+	pipelineBuilder.vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+
+	pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
+	pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+
+	VkPipelineDepthStencilStateCreateInfo depthStencil = VulkanUtility::depthStencilCreateInfo(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+	pipelineBuilder.depthStencil = depthStencil;
+
+	this->phongPipeline = pipelineBuilder.buildPipeline(this->device, this->renderPass);
+
+	this->mainDeletionQueue.pushFunction([=]() {
+		vkDestroyPipeline(this->device, this->phongPipeline.pipeline, nullptr);
+		vkDestroyPipelineLayout(this->device, this->phongPipelineLayout, nullptr);
+	});
+
+	VkSamplerCreateInfo samplerInfo = VulkanUtility::samplerCreateInfo(VK_FILTER_LINEAR);
+	vkCreateSampler(this->device, &samplerInfo, nullptr, &this->defaultSampler);
 }
 
 VmaAllocator VulkanRenderer::getVmaAllocator() {

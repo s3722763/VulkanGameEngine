@@ -140,6 +140,59 @@ void PipelineBuilder::addShaders(VkDevice device, ShaderInfo* shaderInfo) {
 	}
 }
 
+void PipelineBuilder::addPipelineDescriptorBinding(VkDescriptorType type, VkShaderStageFlagBits shaderStage) {
+	auto bufferBinding = VulkanUtility::descriptorSetLayoutBinding(type, shaderStage, static_cast<uint32_t>(this->pipelineSetLayoutBindings.size()));
+
+	this->pipelineSetLayoutBindings.push_back(bufferBinding);
+}
+
+void PipelineBuilder::allocatePipelineDescriptorUniformBuffer(VkDevice device, size_t binding, std::vector<AllocatedBuffer> buffers, uint32_t frameOverlap) {
+	std::vector<VkWriteDescriptorSet> writes{};
+	writes.resize(buffers.size());
+
+	for (auto i = 0; i < frameOverlap; i++) {
+		VkDescriptorBufferInfo bufferInfo{};
+		bufferInfo.buffer = buffers[i].buffer;
+		bufferInfo.offset = 0;
+		bufferInfo.range = buffers[i].size;
+
+		writes[i] = VulkanUtility::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, this->pipelineDescriptors[i], &bufferInfo, binding);
+	}
+
+	vkUpdateDescriptorSets(device, writes.size(), writes.data(), 0, nullptr);
+	this->pipelineSetLayoutBuffers.push_back(buffers);
+}
+
+VkDescriptorSetLayout PipelineBuilder::createPipelineSetLayout(VkDevice device, uint32_t frameOverlap, VkDescriptorPool descriptorPool) {
+	// Create vulkan objects for set layout specific for pipeline
+	VkDescriptorSetLayoutCreateInfo setInfo{};
+	setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	setInfo.pNext = nullptr;
+
+	setInfo.bindingCount = this->pipelineSetLayoutBindings.size();
+	setInfo.flags = 0;
+	setInfo.pBindings = this->pipelineSetLayoutBindings.data();
+
+	// TODO: Add destroy for deconstruction
+	vkCreateDescriptorSetLayout(device, &setInfo, nullptr, &this->pipelineSetLayout);
+
+	for (auto i = 0; i < frameOverlap; i++) {
+		VkDescriptorSetAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.pNext = nullptr;
+
+		allocInfo.descriptorPool = descriptorPool;
+		allocInfo.descriptorSetCount = 1;
+		allocInfo.pSetLayouts = &this->pipelineSetLayout;
+
+		vkAllocateDescriptorSets(device, &allocInfo, &this->pipelineDescriptors[i]);
+	}
+	
+	return this->pipelineSetLayout;
+}
+
+// TODO: Write and update descriptor sets
+
 Pipeline PipelineBuilder::buildPipeline(VkDevice device, VkRenderPass pass) {
 	VkPipelineViewportStateCreateInfo viewportState{};
 	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -182,6 +235,7 @@ Pipeline PipelineBuilder::buildPipeline(VkDevice device, VkRenderPass pass) {
 	Pipeline pipeline;
 	pipeline.name = "test";
 	pipeline.readPipelineCacheFile(device);
+	pipeline.pipelineSetLayout = this->pipelineSetLayout;
 
 	VkResult result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline.pipeline);
 	if (result != VK_SUCCESS) {
@@ -193,6 +247,9 @@ Pipeline PipelineBuilder::buildPipeline(VkDevice device, VkRenderPass pass) {
 	for (auto& stage : this->shaderStages) {
 		vkDestroyShaderModule(device, stage.module, nullptr);
 	}
+
+	pipeline.pipelineSetLayoutBindings = std::move(this->pipelineSetLayoutBindings);
+	pipeline.pipelineSetLayoutBuffers = std::move(this->pipelineSetLayoutBuffers);
 
 	return pipeline;
 }

@@ -45,8 +45,8 @@ void World::initialise() {
 	this->renderSystem->initialise(vulkanDetails, graphicsQueueDetails, transferQueueDetails, graphicsTransferQueueDetails);
 
 	EntityCreateInfo info{};
-	info.directory = "resources/models";
-	info.model = "lost_empire.obj";
+	info.directory = "resources/models/backpack";
+	info.model = "backpack.obj";
 	info.flags |= EntityCreateInfoFlags::HasModel | EntityCreateInfoFlags::Renderable;
 
 	this->addEntity(&info);

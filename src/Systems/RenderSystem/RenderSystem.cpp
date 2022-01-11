@@ -1,7 +1,4 @@
 #include "RenderSystem.hpp"
-#include "RenderSystem.hpp"
-#include "RenderSystem.hpp"
-
 void RenderSystem::initialise(const VulkanDetails* vulkanDetails, QueueDetails graphicsQueue, QueueDetails transferQueue, QueueDetails imageTransferQueue) {
 	return this->vulkanRenderer.initialise(vulkanDetails, graphicsQueue, transferQueue, imageTransferQueue);
 }
