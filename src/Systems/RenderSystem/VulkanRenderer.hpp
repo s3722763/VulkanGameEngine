@@ -11,6 +11,7 @@
 #include "../../Components/ModelComponent.h"
 #include "../../Components/RenderComponents/Material.hpp"
 #include "../../Components/RenderComponents/Camera.hpp"
+#include "LightingSystem.hpp"
 
 struct PushConstants {
 	glm::vec4 data;
@@ -106,6 +107,9 @@ class VulkanRenderer {
 
 	size_t framenumber = 0;
 
+	// SubSystems
+	LightingSystem lightingSystem{};
+
 	void initialiseFramedataStructures();
 	void initialiseSwapchain();
 	void initialiseCommands();
@@ -121,7 +125,7 @@ class VulkanRenderer {
 
 	size_t addMaterial(Material&& material, std::vector<AllocatedImage>* images);
 
-	AllocatedBuffer createBuffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	//AllocatedBuffer createBuffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 	size_t createImageFromFile(std::string& file);
 	void immediateSubmit(UploadContext uploadContext, std::function<void(VkCommandBuffer cmd)>&& function);
 

@@ -53,6 +53,7 @@ std::vector<uint32_t> PipelineBuilder::compileShader(const std::string& name, sh
 	
 	if (module.GetCompilationStatus() != shaderc_compilation_status_success) {
 		std::cout << module.GetErrorMessage();
+		abort();
 	}
 
 	return { module.cbegin(), module.cend() };

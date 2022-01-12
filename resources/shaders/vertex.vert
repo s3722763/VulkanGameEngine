@@ -7,6 +7,7 @@ layout (location = 2) in vec3 vNormal;
 
 layout (location = 0) out vec2 outUV;
 layout (location = 1) out vec3 outNormal;
+layout (location = 2) out vec3 outWorldPosition;
 
 layout (set = 0, binding = 0) uniform CameraBuffer {
 	mat4 view;
@@ -25,4 +26,5 @@ void main() {
 	gl_Position = transformationMatrix * vec4(vPosition, 1.0f);
 	outUV = vUV;
 	outNormal = vNormal;
+	outWorldPosition = (PushConstants.renderMatrix *  vec4(vPosition, 1.0f)).xyz;
 }

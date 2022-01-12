@@ -2,6 +2,8 @@
 #include "VulkanUtility.hpp"
 #include "VulkanUtility.hpp"
 #include "VulkanUtility.hpp"
+#include "VulkanUtility.hpp"
+#include <iostream>
 
 VkPipelineShaderStageCreateInfo VulkanUtility::pipelineShaderStageCreateInfo(VkShaderStageFlagBits stage, VkShaderModule shaderModule) {
 	VkPipelineShaderStageCreateInfo info{};
@@ -252,6 +254,29 @@ VkWriteDescriptorSet VulkanUtility::writeDescriptorImage(VkDescriptorType type, 
 	return set;
 }
 
+AllocatedBuffer VulkanUtility::createBuffer(VmaAllocator allocator, size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage) {
+	VkBufferCreateInfo bufferInfo{};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.pNext = nullptr;
+
+	bufferInfo.size = allocSize;
+	bufferInfo.usage = usage;
+
+	VmaAllocationCreateInfo allocInfo{};
+	allocInfo.usage = memoryUsage;
+
+	AllocatedBuffer buffer{};
+
+	VkResult result = vmaCreateBuffer(allocator, &bufferInfo, &allocInfo, &buffer.buffer, &buffer.allocation, nullptr);
+
+	if (result) {
+		std::cout << "Detected Vulkan error while creating buffer: " << result << std::endl;
+		abort();
+	}
+
+	return buffer;
+}
+
 void DeletionQueue::pushFunction(std::function<void()>&& function) {
 	this->deletors.push_back(function);
 }
@@ -262,4 +287,49 @@ void DeletionQueue::flush() {
 	}
 
 	this->deletors.clear();
+}
+
+void VulkanUtility::immediateSubmit(VkDevice device, VkQueue graphicsQueue, UploadContext uploadContext, std::function<void(VkCommandBuffer cmd)>&& function) {
+	VkCommandBufferAllocateInfo cmdAllocInfo = VulkanUtility::commandBufferAllocateInfo(uploadContext.commandPool, 1);
+	VkCommandBuffer cmd;
+
+	VkResult result = vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
+
+	if (result) {
+		std::cout << "Detected Vulkan error while allocating immedaite submit command buffer: " << result << std::endl;
+		abort();
+	}
+
+	VkCommandBufferBeginInfo cmdBeginInfo = VulkanUtility::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+	result = vkBeginCommandBuffer(cmd, &cmdBeginInfo);
+
+	if (result) {
+		std::cout << "Detected Vulkan error while beginning immedaite submit command buffer: " << result << std::endl;
+		abort();
+	}
+
+	// execute function
+	function(cmd);
+
+	result = vkEndCommandBuffer(cmd);
+
+	if (result) {
+		std::cout << "Detected Vulkan error while ending immedaite submit command buffer: " << result << std::endl;
+		abort();
+	}
+
+	VkSubmitInfo submit = VulkanUtility::submitInfo(&cmd);
+
+	result = vkQueueSubmit(graphicsQueue, 1, &submit, uploadContext.uploadFence);
+
+	if (result) {
+		std::cout << "Detected Vulkan error while beginning immedaite submit command buffer: " << result << std::endl;
+		abort();
+	}
+
+	vkWaitForFences(device, 1, &uploadContext.uploadFence, true, 9999999999);
+	vkResetFences(device, 1, &uploadContext.uploadFence);
+
+	vkResetCommandPool(device, uploadContext.commandPool, 0);
 }

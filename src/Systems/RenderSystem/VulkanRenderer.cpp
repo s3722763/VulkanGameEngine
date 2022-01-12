@@ -315,20 +315,25 @@ void VulkanRenderer::initialisePipelines() {
 }
 
 void VulkanRenderer::initialiseGlobalDescriptors() {
-	VkDescriptorSetLayoutBinding cameraBufferBinding = VulkanUtility::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+	std::vector<VkDescriptorSetLayoutBinding> globalDescriptorSetLayoutBindings{};
+	// Camera Buffer binding
+	globalDescriptorSetLayoutBindings.push_back(VulkanUtility::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0));
+	// Add lighting system sets to global layout
+	this->lightingSystem.addLightingSystemToDescriptorSet(&globalDescriptorSetLayoutBindings);
 
 	VkDescriptorSetLayoutCreateInfo setInfo{};
 	setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	setInfo.pNext = nullptr;
 
-	setInfo.bindingCount = 1;
+	setInfo.bindingCount = globalDescriptorSetLayoutBindings.size();
 	setInfo.flags = 0;
-	setInfo.pBindings = &cameraBufferBinding;
+	setInfo.pBindings = globalDescriptorSetLayoutBindings.data();
 
 	vkCreateDescriptorSetLayout(this->device, &setInfo, nullptr, &this->sceneSetLayout);
 
 	std::vector<VkDescriptorPoolSize> sizes = {
 		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10 },
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10 }
 	};
 
@@ -349,8 +354,11 @@ void VulkanRenderer::initialiseGlobalDescriptors() {
 		vkDestroyDescriptorPool(this->device, this->descriptorPool, nullptr);
 	});
 
+	// Create lighting buffers
+
+
 	for (auto i = 0; i < FRAME_OVERLAP; i++) {
-		this->framedata.cameraBuffers[i] = createBuffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		this->framedata.cameraBuffers[i] = VulkanUtility::createBuffer(this->allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -367,9 +375,9 @@ void VulkanRenderer::initialiseGlobalDescriptors() {
 		bufferInfo.offset = 0;
 		bufferInfo.range = sizeof(GPUCameraData);
 
-		VkWriteDescriptorSet setWrite = VulkanUtility::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, this->framedata.globalDescriptors[i], &bufferInfo, 0);
+		VkWriteDescriptorSet cameraSetWrite = VulkanUtility::writeDescriptorBuffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, this->framedata.globalDescriptors[i], &bufferInfo, 0);
 
-		vkUpdateDescriptorSets(this->device, 1, &setWrite, 0, nullptr);
+		vkUpdateDescriptorSets(this->device, 1, &cameraSetWrite, 0, nullptr);
 
 		this->mainDeletionQueue.pushFunction([=]() {
 			vmaDestroyBuffer(this->allocator, this->framedata.cameraBuffers[i].buffer, this->framedata.cameraBuffers[i].allocation);
@@ -396,7 +404,12 @@ void VulkanRenderer::drawObjects(VkCommandBuffer cmd, std::vector<ModelRenderCom
 	vmaUnmapMemory(this->allocator, this->framedata.cameraBuffers[this->getCurrentFrameIndex()].allocation);
 
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipeline.pipeline);
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipelineLayout, 0, 1, &this->framedata.globalDescriptors[this->getCurrentFrameIndex()], 0, nullptr);
+	
+	std::array<VkDescriptorSet, 1> sceneDescriptorSets = {
+		this->framedata.globalDescriptors[this->getCurrentFrameIndex()]
+	};
+
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipelineLayout, 0, sceneDescriptorSets.size(), sceneDescriptorSets.data(), 0, nullptr);
 
 	glm::vec3 modelPos = glm::vec3{ 0, 0, 0};
 	glm::mat4 meshMatrix = glm::translate(glm::mat4{1.0f}, modelPos);
@@ -467,29 +480,6 @@ size_t VulkanRenderer::addMaterial(Material&& material, std::vector<AllocatedIma
 	return id;
 }
 
-AllocatedBuffer VulkanRenderer::createBuffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage) {
-	VkBufferCreateInfo bufferInfo{};
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.pNext = nullptr;
-
-	bufferInfo.size = allocSize;
-	bufferInfo.usage = usage;
-
-	VmaAllocationCreateInfo allocInfo{};
-	allocInfo.usage = memoryUsage;
-
-	AllocatedBuffer buffer{};
-
-	VkResult result = vmaCreateBuffer(this->allocator, &bufferInfo, &allocInfo, &buffer.buffer, &buffer.allocation, nullptr);
-
-	if (result) {
-		std::cout << "Detected Vulkan error while creating buffer: " << result << std::endl;
-		abort();
-	}
-
-	return buffer;
-}
-
 size_t VulkanRenderer::createImageFromFile(std::string& file) {
 	auto material = this->materialMap.find(file);
 
@@ -546,7 +536,7 @@ size_t VulkanRenderer::createImageFromFile(std::string& file) {
 
 		vmaCreateImage(this->allocator, &imageInfo, &imageAllocInfo, &image.image, &image.allocation, nullptr);
 
-		this->immediateSubmit(this->imageTransferContext, [=](VkCommandBuffer cmd) {
+		VulkanUtility::immediateSubmit(this->device, this->imageTransferQueue, this->imageTransferContext, [=](VkCommandBuffer cmd) {
 			VkImageSubresourceRange range{};
 			range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			range.baseMipLevel = 0;
@@ -628,6 +618,22 @@ void VulkanRenderer::initialise(const VulkanDetails* vulkanDetails, QueueDetails
 	this->initialiseDefaultRenderpass();
 	this->initialiseFramebuffers();
 	this->initialiseSyncStructures();
+
+	this->lightingSystem.initialise(FRAME_OVERLAP);
+
+	// Add light
+	PointLightCreateInfo pointLightCreateInfo{};
+	pointLightCreateInfo.attenuationFactors = { 0, 0, 0 };
+	pointLightCreateInfo.baseColour = { 1.0, 1.0, 1.0, 0.0 };
+	pointLightCreateInfo.position = { -10, 0, 0, 0};
+
+	this->lightingSystem.addPointLight(pointLightCreateInfo);
+
+	DirectionalLightCreateInfo directionalLightCreateInfo{};
+	directionalLightCreateInfo.baseColour = { 0.8, 0.8, 0.8, 0.0 };
+	directionalLightCreateInfo.direction = { 0.0, 0.0, 1.0, 0.0 };
+	this->lightingSystem.addDirectionLight(directionalLightCreateInfo);
+
 	this->initialiseGlobalDescriptors();
 	this->initialisePipelines();
 }
@@ -649,6 +655,9 @@ void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderCompone
 		std::cout << "Detected Vulkan error while resetting render fence in draw function: " << result << std::endl;
 		abort();
 	}
+
+	// Update light system
+	this->lightingSystem.updateLightingSystemBuffers(this->device, this->transferQueue, this->uploadContext, this->allocator, index, this->framedata.globalDescriptors[index]);
 
 	uint32_t swapchainImageIndex;
 	result = vkAcquireNextImageKHR(this->device, this->swapchain, 1000000000, this->framedata.presentSemaphores[index], nullptr, &swapchainImageIndex);
@@ -784,51 +793,6 @@ size_t VulkanRenderer::uploadModelMaterials(std::vector<MaterialInfo>* materials
 	modelMaterials.push_back(std::move(materialIds));
 
 	return id;
-}
-
-void VulkanRenderer::immediateSubmit(UploadContext uploadContext, std::function<void(VkCommandBuffer cmd)>&& function) {
-	VkCommandBufferAllocateInfo cmdAllocInfo = VulkanUtility::commandBufferAllocateInfo(uploadContext.commandPool, 1);
-	VkCommandBuffer cmd;
-
-	VkResult result = vkAllocateCommandBuffers(this->device, &cmdAllocInfo, &cmd);
-
-	if (result) {
-		std::cout << "Detected Vulkan error while allocating immedaite submit command buffer: " << result << std::endl;
-		abort();
-	}
-
-	VkCommandBufferBeginInfo cmdBeginInfo = VulkanUtility::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-	result = vkBeginCommandBuffer(cmd, &cmdBeginInfo);
-
-	if (result) {
-		std::cout << "Detected Vulkan error while beginning immedaite submit command buffer: " << result << std::endl;
-		abort();
-	}
-
-	// execute function
-	function(cmd);
-
-	result = vkEndCommandBuffer(cmd);
-
-	if (result) {
-		std::cout << "Detected Vulkan error while ending immedaite submit command buffer: " << result << std::endl;
-		abort();
-	}
-
-	VkSubmitInfo submit = VulkanUtility::submitInfo(&cmd);
-
-	result = vkQueueSubmit(this->graphicsQueue, 1, &submit, this->uploadContext.uploadFence);
-
-	if (result) {
-		std::cout << "Detected Vulkan error while beginning immedaite submit command buffer: " << result << std::endl;
-		abort();
-	}
-
-	vkWaitForFences(this->device, 1, &this->uploadContext.uploadFence, true, 9999999999);
-	vkResetFences(this->device, 1, &this->uploadContext.uploadFence);
-
-	vkResetCommandPool(this->device, this->uploadContext.commandPool, 0);
 }
 
 void VulkanRenderer::cleanup() {
