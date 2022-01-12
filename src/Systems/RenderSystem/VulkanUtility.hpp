@@ -44,7 +44,18 @@ namespace VulkanUtility {
 		vmaUnmapMemory(allocator, buffer->allocation);
 	}
 
-	template<typename T>
+	template<class, template<class...> class>
+	inline constexpr bool is_specialisation = false;
+	template<template<class...> class T, class... Args>
+	inline constexpr bool is_specialisation<T<Args...>, T> = true;
+
+	template<class T>
+	concept Vec = is_specialisation<T, std::vector>;
+
+	template<class T>
+	concept NotVec = !is_specialisation<T, std::vector>;
+
+	template<NotVec T>
 	AllocatedBuffer allocateGPUOnlyBuffer(VkDevice device, VkQueue graphicsQueue, UploadContext uploadContext, VmaAllocator allocator, 
 										  T* buffer, size_t size, VkBufferUsageFlags usageFlags) {
 		AllocatedBuffer allocatedBuffer{};
