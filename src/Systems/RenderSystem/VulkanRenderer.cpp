@@ -12,6 +12,9 @@
 #include "../../Components/ModelComponent.h"
 #include <glm/gtx/transform.hpp>
 #include <stb/stb_image.h>
+#include "../../imgui/imgui.h"
+#include "../../imgui/imgui_impl_sdl.h"
+#include "../../imgui/imgui_impl_vulkan.h"
 
 constexpr int WIDTH = 1920;
 constexpr int HEIGHT = 1080;
@@ -314,6 +317,71 @@ void VulkanRenderer::initialisePipelines() {
 	this->initialisePhongPipeline();
 }
 
+void VulkanRenderer::initialiseImgui() {
+	VkDescriptorPoolSize poolSizes[] = {
+		{ VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 }
+	};
+
+	VkDescriptorPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.pNext = nullptr;
+	poolInfo.maxSets = 1000;
+	poolInfo.poolSizeCount = std::size(poolSizes);
+	poolInfo.pPoolSizes = poolSizes;
+
+	VkDescriptorPool imguiPool;
+	VkResult result = vkCreateDescriptorPool(this->device, &poolInfo, nullptr, &imguiPool);
+
+	if (result) {
+		std::cout << "Failed to create descriptor pool for imgui: " << result << std::endl;
+		abort();
+	}
+
+	ImGui::CreateContext();
+
+	/*int width, height;
+	SDL_GetWindowSize(this->window, &width, &height);
+
+	auto& io = ImGui::GetIO();
+	io.DisplaySize = ImVec2(width, height);*/
+
+	ImGui_ImplSDL2_InitForVulkan(this->window);
+
+	ImGui_ImplVulkan_InitInfo initInfo{};
+	initInfo.Instance = this->instance;
+	initInfo.PhysicalDevice = this->chosenGPU;
+	initInfo.Device = this->device;
+	initInfo.Queue = this->graphicsQueue;
+	initInfo.DescriptorPool = imguiPool;
+	initInfo.MinImageCount = 3;
+	initInfo.ImageCount = 3;
+	initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+	ImGui_ImplVulkan_Init(&initInfo, this->renderPass);
+
+	VulkanUtility::immediateSubmit(this->device, this->imageTransferQueue, this->imageTransferContext, [&](VkCommandBuffer cmd) {
+		ImGui_ImplVulkan_CreateFontsTexture(cmd);
+	});
+
+	// Clear textures from CPU
+	ImGui_ImplVulkan_DestroyFontUploadObjects();
+
+	this->mainDeletionQueue.pushFunction([=] {
+		vkDestroyDescriptorPool(this->device, imguiPool, nullptr);
+		ImGui_ImplVulkan_Shutdown();
+	});
+}
+
 void VulkanRenderer::initialiseGlobalDescriptors() {
 	std::vector<VkDescriptorSetLayoutBinding> globalDescriptorSetLayoutBindings{};
 	// Camera Buffer binding
@@ -598,7 +666,7 @@ size_t VulkanRenderer::getCurrentFrameIndex() {
 	return this->framenumber % FRAME_OVERLAP;
 }
 
-void VulkanRenderer::initialise(const VulkanDetails* vulkanDetails, QueueDetails graphicsQueue, QueueDetails transferQueue, QueueDetails imageTransferQueue) {
+void VulkanRenderer::initialise(const VulkanDetails* vulkanDetails, QueueDetails graphicsQueue, QueueDetails transferQueue, QueueDetails imageTransferQueue, SDL_Window* window) {
 	this->device = vulkanDetails->device;
 	this->instance = vulkanDetails->instance;
 	this->debugMessenger = vulkanDetails->debugMessenger;
@@ -611,6 +679,7 @@ void VulkanRenderer::initialise(const VulkanDetails* vulkanDetails, QueueDetails
 	this->transferQueueFamily = transferQueue.family;
 	this->imageTransferQueue = imageTransferQueue.queue;
 	this->imageTransferQueueFamily = imageTransferQueue.family;
+	this->window = window;
 
 	this->initialiseFramedataStructures();
 	this->initialiseSwapchain();
@@ -636,6 +705,7 @@ void VulkanRenderer::initialise(const VulkanDetails* vulkanDetails, QueueDetails
 
 	this->initialiseGlobalDescriptors();
 	this->initialisePipelines();
+	this->initialiseImgui();
 }
 
 void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderComponents, std::vector<ModelResource>* modelResourceIds, std::vector<size_t>* ids, Camera* camera) {
@@ -674,6 +744,8 @@ void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderCompone
 		std::cout << "Detected Vulkan error while resetting the main command buffer: " << result << std::endl;
 		abort();
 	}
+
+	ImGui::Render();
 
 	VkCommandBuffer cmd = this->framedata.mainCommandBuffers[index];
 	VkCommandBufferBeginInfo cmdBeginInfo = VulkanUtility::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
@@ -719,6 +791,8 @@ void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderCompone
 	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
 	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1920.0f / 1080.0f, 0.1f, 200.0f);
 	projection[1][1] *= -1;*/
+
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 
 	vkCmdEndRenderPass(cmd);
 

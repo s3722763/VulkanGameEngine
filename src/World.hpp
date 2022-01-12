@@ -30,6 +30,8 @@ class World {
 
 	Entities entities;
 	
+	SDL_Window* window;
+
 	size_t addEntity(EntityCreateInfo* info);
 
 public:

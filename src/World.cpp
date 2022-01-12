@@ -1,6 +1,11 @@
 #include "World.hpp"
 #include <sdl/SDL_vulkan.h>
 #include <chrono>
+#include "imgui/imgui_impl_sdl.h"
+#include "imgui/imgui_impl_vulkan.h"
+#include "imgui/imgui.h"
+
+
 
 size_t World::addEntity(EntityCreateInfo* info) {
 	AddEntityInfo addEntityInfo{};
@@ -32,7 +37,7 @@ void World::initialise() {
 
 	SDL_WindowFlags windowFlags = SDL_WINDOW_VULKAN;
 
-	SDL_Window* window = SDL_CreateWindow("Game Engine", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, windowFlags);
+	this->window = SDL_CreateWindow("Game Engine", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH, HEIGHT, windowFlags);
 	this->resourceManager->initialise(window);
 
 	// Initialise SDL
@@ -42,7 +47,7 @@ void World::initialise() {
 	auto transferQueueDetails = this->resourceManager->createTransferQueue();
 	auto graphicsTransferQueueDetails = this->resourceManager->createGraphicsQueue();
 
-	this->renderSystem->initialise(vulkanDetails, graphicsQueueDetails, transferQueueDetails, graphicsTransferQueueDetails);
+	this->renderSystem->initialise(vulkanDetails, graphicsQueueDetails, transferQueueDetails, graphicsTransferQueueDetails, this->window);
 
 	EntityCreateInfo info{};
 	info.directory = "resources/models/backpack";
@@ -71,13 +76,20 @@ void World::run() {
 
 		const uint8_t* currentKeyStates = SDL_GetKeyboardState(NULL);
 
-		this->renderSystem->render(this->resourceManager->getModelRenderBuffers(), this->entities.getModelResourceIds(), &camera);
 		while (SDL_PollEvent(&e) != 0) {
+			ImGui_ImplSDL2_ProcessEvent(&e);
+
 			if (e.type == SDL_QUIT) {
 				exit = true;
 			} else if (e.type == SDL_KEYDOWN) {
 				if (e.key.keysym.scancode == SDL_SCANCODE_Q) {
 					exit = true;
+				} else if (e.key.keysym.scancode == SDL_SCANCODE_LALT) {
+					if (SDL_GetRelativeMouseMode() == SDL_TRUE) {
+						SDL_SetRelativeMouseMode(SDL_FALSE);
+					} else {
+						SDL_SetRelativeMouseMode(SDL_TRUE);
+					}
 				}
 			} else if (e.type == SDL_MOUSEMOTION) {
 				// Only move the camera when the window has eaten the mouse
@@ -95,8 +107,16 @@ void World::run() {
 
 		camera.updateCamera(duration_seconds, currentKeyStates);
 
-		auto cameraPos = camera.getPosition();
+		//auto cameraPos = camera.getPosition();
 		//std::cout << "Camera pos X: " << cameraPos.x << " Y: " << cameraPos.y << " Z: " << cameraPos.z << std::endl;
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplSDL2_NewFrame(this->window);
+		ImGui::NewFrame();
+
+		ImGui::ShowDemoWindow();
+
+		this->renderSystem->render(this->resourceManager->getModelRenderBuffers(), this->entities.getModelResourceIds(), &camera);
+
 	}
 
 	renderSystem->cleanup();

@@ -1,6 +1,6 @@
 #include "RenderSystem.hpp"
-void RenderSystem::initialise(const VulkanDetails* vulkanDetails, QueueDetails graphicsQueue, QueueDetails transferQueue, QueueDetails imageTransferQueue) {
-	return this->vulkanRenderer.initialise(vulkanDetails, graphicsQueue, transferQueue, imageTransferQueue);
+void RenderSystem::initialise(const VulkanDetails* vulkanDetails, QueueDetails graphicsQueue, QueueDetails transferQueue, QueueDetails imageTransferQueue, SDL_Window* window) {
+	return this->vulkanRenderer.initialise(vulkanDetails, graphicsQueue, transferQueue, imageTransferQueue, window);
 }
 
 void RenderSystem::render(std::vector<ModelRenderComponents>* models, std::vector<ModelResource>* modelResourceIds, Camera* camera) {

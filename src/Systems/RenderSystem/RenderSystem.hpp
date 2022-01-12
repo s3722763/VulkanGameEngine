@@ -11,7 +11,7 @@ class RenderSystem {
 	std::vector<size_t> renderableIds;
 
 public:
-	void initialise(const VulkanDetails* vulkanDetails, QueueDetails graphicsQueue, QueueDetails transferQueue, QueueDetails imageTransferQueue);
+	void initialise(const VulkanDetails* vulkanDetails, QueueDetails graphicsQueue, QueueDetails transferQueue, QueueDetails imageTransferQueue, SDL_Window* window);
 	void render(std::vector<ModelRenderComponents>* models, std::vector<ModelResource>* modelResourceIds, Camera* camera);
 	void cleanup();
 	void addEntity(size_t id);

@@ -118,6 +118,7 @@ class VulkanRenderer {
 	void initialiseSyncStructures();
 	void initialisePipelines();
 	void initialiseGlobalDescriptors();
+	void initialiseImgui();
 
 	void initialisePhongPipeline();
 
@@ -127,11 +128,11 @@ class VulkanRenderer {
 
 	//AllocatedBuffer createBuffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 	size_t createImageFromFile(std::string& file);
-	void immediateSubmit(UploadContext uploadContext, std::function<void(VkCommandBuffer cmd)>&& function);
+	//void immediateSubmit(UploadContext uploadContext, std::function<void(VkCommandBuffer cmd)>&& function);
 
 	size_t getCurrentFrameIndex();
 public:
-	void initialise(const VulkanDetails* vulkanDetails, QueueDetails graphicsQueue, QueueDetails transferQueue, QueueDetails imageTransferQueue);
+	void initialise(const VulkanDetails* vulkanDetails, QueueDetails graphicsQueue, QueueDetails transferQueue, QueueDetails imageTransferQueue, SDL_Window* window);
 	void draw(std::vector<ModelRenderComponents>* modelRenderComponents, std::vector<ModelResource>* modelResourceIds, std::vector<size_t>* ids, Camera* camera);
 	void cleanup();
 	size_t uploadMaterial(MaterialInfo model);
