@@ -94,6 +94,6 @@ void main() {
 	vec3 pointLightColour = applyPointLights(colour, worldPos, normal);
 	vec3 directionalLightColour = applyDirectionalLights(colour, normal);
 
-	//outFragColour = vec4(pointLightColour + directionalLightColour + (colour * 0.01), 1.0f);
-	outFragColour = vec4(colour, 1.0);
+	outFragColour = vec4(pointLightColour + directionalLightColour + (colour * 0.01), 1.0f);
+	//outFragColour = vec4(colour, 1.0);
 }
