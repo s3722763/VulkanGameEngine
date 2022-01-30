@@ -27,8 +27,10 @@ struct GPUCameraData {
 struct Framedata {
 	std::vector<VkSemaphore> presentSemaphores;
 	std::vector<VkSemaphore> renderSemaphores;
+	std::vector<VkSemaphore> deferredSemaphores;
 	std::vector<VkCommandPool> commandPools;
-	std::vector<VkCommandBuffer> mainCommandBuffers;
+	std::vector<VkCommandBuffer> deferredMainCommandBuffers;
+	std::vector<VkCommandBuffer> lightingMainCommandBuffers;
 	std::vector<VkFence> renderFences;
 	std::vector<VkImageView> depthImageViews;
 	std::vector<AllocatedImage> depthImages;
@@ -61,14 +63,22 @@ class VulkanRenderer {
 	//VkCommandBuffer mainCommandBuffer;
 	Framedata framedata;
 
-	VkRenderPass renderPass;
-	std::vector<VkFramebuffer> framebuffers;
+	//VkRenderPass renderPass;
+	//std::vector<VkFramebuffer> framebuffers;
 
 	//VkSemaphore presentSemaphore, renderSemaphore;
 	//VkFence renderFence;
 
 	VkPipelineLayout phongPipelineLayout;
 	Pipeline phongPipeline;
+
+	VkPipelineLayout deferredPipelineLayout;
+	Pipeline deferredPipeline;
+
+	VkRenderPass imguiRenderPass;
+
+	// Framebuffer attachment sampler
+	VkSampler framebufferAttachmentSampler;
 
 	// VMA
 	VmaAllocator allocator;
@@ -120,6 +130,7 @@ class VulkanRenderer {
 	void initialiseGlobalDescriptors();
 	void initialiseImgui();
 
+	void initialiseDeferredPipeline();
 	void initialisePhongPipeline();
 
 	void drawObjects(VkCommandBuffer cmd, std::vector<ModelRenderComponents>* modelRenderComponents, std::vector<ModelResource>* modelResourceIds, std::vector<size_t>* ids, Camera* camera);

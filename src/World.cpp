@@ -65,7 +65,7 @@ void World::run() {
 	bool exit = false;
 
 	Camera camera{};
-	camera.setPosition({ 0.0, 2.0, 0.0 });
+	camera.setPosition({ 0.0, 2.0, 10.0 });
 
 	while (!exit) {
 		// Delta seconds
@@ -77,7 +77,7 @@ void World::run() {
 		const uint8_t* currentKeyStates = SDL_GetKeyboardState(NULL);
 
 		while (SDL_PollEvent(&e) != 0) {
-			ImGui_ImplSDL2_ProcessEvent(&e);
+			//ImGui_ImplSDL2_ProcessEvent(&e);
 
 			if (e.type == SDL_QUIT) {
 				exit = true;
@@ -109,17 +109,16 @@ void World::run() {
 
 		//auto cameraPos = camera.getPosition();
 		//std::cout << "Camera pos X: " << cameraPos.x << " Y: " << cameraPos.y << " Z: " << cameraPos.z << std::endl;
-		ImGui_ImplVulkan_NewFrame();
+		/*ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplSDL2_NewFrame(this->window);
-		ImGui::NewFrame();
+		ImGui::NewFrame();*/
 
-		ImGui::ShowDemoWindow();
+		//ImGui::ShowDemoWindow();
 
 		this->renderSystem->render(this->resourceManager->getModelRenderBuffers(), this->entities.getModelResourceIds(), &camera);
-
 	}
 
 	renderSystem->cleanup();
 	resourceManager->cleanup();
 }
-
+ 

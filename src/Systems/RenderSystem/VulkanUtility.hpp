@@ -34,6 +34,8 @@ namespace VulkanUtility {
 	VkSamplerCreateInfo samplerCreateInfo(VkFilter filters, VkSamplerAddressMode samplerAddressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
 	VkWriteDescriptorSet writeDescriptorImage(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorImageInfo* imageInfo, uint32_t binding);
 	AllocatedBuffer createBuffer(VmaAllocator allocator, size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	VkPipelineColorBlendAttachmentState pipelineColorBlendAttachmentState(VkColorComponentFlags colorWriteMask, VkBool32 blendEnable);
+	VkDescriptorImageInfo descriptorimageInfo(VkSampler sampler, VkImageView imageView, VkImageLayout layout);
 	void immediateSubmit(VkDevice device, VkQueue graphicsQueue, UploadContext uploadContext, std::function<void(VkCommandBuffer cmd)>&& function);
 
 	template<typename T>

@@ -3,6 +3,8 @@
 #include "VulkanUtility.hpp"
 #include "VulkanUtility.hpp"
 #include "VulkanUtility.hpp"
+#include "VulkanUtility.hpp"
+#include "VulkanUtility.hpp"
 #include <iostream>
 
 VkPipelineShaderStageCreateInfo VulkanUtility::pipelineShaderStageCreateInfo(VkShaderStageFlagBits stage, VkShaderModule shaderModule) {
@@ -275,6 +277,24 @@ AllocatedBuffer VulkanUtility::createBuffer(VmaAllocator allocator, size_t alloc
 	}
 
 	return buffer;
+}
+
+VkPipelineColorBlendAttachmentState VulkanUtility::pipelineColorBlendAttachmentState(VkColorComponentFlags colorWriteMask, VkBool32 blendEnable) {
+	VkPipelineColorBlendAttachmentState state{};
+
+	state.colorWriteMask = colorWriteMask;
+	state.blendEnable = blendEnable;
+
+	return state;
+}
+
+VkDescriptorImageInfo VulkanUtility::descriptorimageInfo(VkSampler sampler, VkImageView imageView, VkImageLayout layout) {
+	VkDescriptorImageInfo result{};
+	result.sampler = sampler;
+	result.imageLayout = layout;
+	result.imageView = imageView;
+
+	return result;
 }
 
 void DeletionQueue::pushFunction(std::function<void()>&& function) {

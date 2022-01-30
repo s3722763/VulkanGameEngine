@@ -35,13 +35,12 @@ layout(std140, set = 0, binding = 6) readonly buffer LightInformation {
 } lightingInfo;
 
 layout (location = 0) in vec2 texCoord;
-layout (location = 1) in vec3 normal;
-layout (location = 2) in vec3 worldPos;
 
 layout (location = 0) out vec4 outFragColour;
 
-layout (set = 1, binding = 0) uniform sampler2D diffuse;
-//layout (set = 1, binding = 1) uniform sampler2D specular;
+layout (set = 1, binding = 0) uniform sampler2D positionTexture;
+layout (set = 1, binding = 1) uniform sampler2D normalTexture;
+layout (set = 1, binding = 2) uniform sampler2D albedoTexture;
 
 float calculateAttenuation(uint index, vec3 pos) {
 	float len = length(pos - pointLightPositions.positions[index].xyz);
@@ -50,7 +49,7 @@ float calculateAttenuation(uint index, vec3 pos) {
 	return min(1 / (factors.constant + (factors.linear * len) + (factors.quadratic * len * len)), 1.0);
 }
 
-vec3 applyPointLights(vec3 baseColour) {
+vec3 applyPointLights(vec3 baseColour, vec3 worldPos, vec3 normal) {
     vec3 result = vec3(0);
 
 	for (uint i = 0; i < lightingInfo.numberPointLights; i++) {
@@ -68,7 +67,7 @@ vec3 applyPointLights(vec3 baseColour) {
 	return result;
 }
 
-vec3 applyDirectionalLights(vec3 baseColour) {
+vec3 applyDirectionalLights(vec3 baseColour, vec3 normal) {
 	vec3 result = vec3(0);
 
 	for (uint i = 0; i < lightingInfo.numberDirectionalLights; i++) {
@@ -82,7 +81,9 @@ vec3 applyDirectionalLights(vec3 baseColour) {
 }
 
 void main() {
-	vec3 colour = texture(diffuse, texCoord).rgb;
+	vec3 colour = texture(albedoTexture, texCoord).rgb;
+	vec3 worldPos = texture(positionTexture, texCoord).rgb;
+	vec3 normal = texture(normalTexture, texCoord).rgb;
 
 	/*for (uint i = 0; i < lightingInfo.numberDirectionalLights; i++) {
 		vec3 lightDir = normalize(directionalLightDirections.directions[i].xyz);
@@ -90,9 +91,9 @@ void main() {
 		colour = colour * diff;
 	}*/
 
-	vec3 pointLightColour = applyPointLights(colour);
-	vec3 directionalLightColour = applyDirectionalLights(colour);
+	vec3 pointLightColour = applyPointLights(colour, worldPos, normal);
+	vec3 directionalLightColour = applyDirectionalLights(colour, normal);
 
-	outFragColour = vec4(pointLightColour + directionalLightColour + (colour * 0.01), 1.0f);
-	//outFragColour = vec4(colour, 1.0);
+	//outFragColour = vec4(pointLightColour + directionalLightColour + (colour * 0.01), 1.0f);
+	outFragColour = vec4(colour, 1.0);
 }

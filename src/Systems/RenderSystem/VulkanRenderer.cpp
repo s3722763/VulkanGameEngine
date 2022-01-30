@@ -18,12 +18,18 @@
 
 constexpr int WIDTH = 1920;
 constexpr int HEIGHT = 1080;
+constexpr size_t POSITION_ATTACHMENT_INDEX = 0;
+constexpr size_t NORMAL_ATTACHMENT_INDEX = 1;
+constexpr size_t ALBEDO_ATTACHMENT_INDEX = 2;
+constexpr size_t DEPTH_ATTACHMENT_INDEX = 3;
 
 void VulkanRenderer::initialiseFramedataStructures() {
 	this->framedata.commandPools.resize(FRAME_OVERLAP);
-	this->framedata.mainCommandBuffers.resize(FRAME_OVERLAP);
+	this->framedata.deferredMainCommandBuffers.resize(FRAME_OVERLAP);
+	this->framedata.lightingMainCommandBuffers.resize(FRAME_OVERLAP);
 	this->framedata.presentSemaphores.resize(FRAME_OVERLAP);
 	this->framedata.renderSemaphores.resize(FRAME_OVERLAP);
+	this->framedata.deferredSemaphores.resize(FRAME_OVERLAP);
 	this->framedata.renderFences.resize(FRAME_OVERLAP);
 	this->framedata.depthImages.resize(FRAME_OVERLAP);
 	this->framedata.depthImageViews.resize(FRAME_OVERLAP);
@@ -73,7 +79,7 @@ void VulkanRenderer::initialiseSwapchain() {
 		}
 
 		this->mainDeletionQueue.pushFunction([=]() {
-			vkDestroyImageView(this->device, this->framedata.depthImageViews[i], nullptr);
+			vkDestroyImageView(this->device, this->framedata.depthImageViews[i],  nullptr);
 			vmaDestroyImage(this->allocator, this->framedata.depthImages[i].image, this->framedata.depthImages[i].allocation);
 		});
 	}
@@ -93,7 +99,14 @@ void VulkanRenderer::initialiseCommands() {
 		// Commands will come from the main graphics queue
 		VkCommandBufferAllocateInfo cmdAllocInfo = VulkanUtility::commandBufferAllocateInfo(this->framedata.commandPools[i], 1);
 
-		result = vkAllocateCommandBuffers(this->device, &cmdAllocInfo, &this->framedata.mainCommandBuffers[i]);
+		result = vkAllocateCommandBuffers(this->device, &cmdAllocInfo, &this->framedata.deferredMainCommandBuffers[i]);
+
+		if (result) {
+			std::cout << "Detected Vulkan error while creating main graphics command buffer: " << result << std::endl;
+			abort();
+		}
+
+		result = vkAllocateCommandBuffers(this->device, &cmdAllocInfo, &this->framedata.lightingMainCommandBuffers[i]);
 
 		if (result) {
 			std::cout << "Detected Vulkan error while creating main graphics command buffer: " << result << std::endl;
@@ -127,7 +140,7 @@ void VulkanRenderer::initialiseCommands() {
 	});
 }
 
-void VulkanRenderer::initialiseDefaultRenderpass() {
+/*void VulkanRenderer::initialiseDefaultRenderpass() {
 	// I think each attachment is the input textures for like deferred rendering
 
 	// Render pass will use this colour attachment
@@ -193,7 +206,7 @@ void VulkanRenderer::initialiseDefaultRenderpass() {
 	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
 	renderPassInfo.dependencyCount = 1;
-	renderPassInfo.pDependencies = &dependency;*/
+	renderPassInfo.pDependencies = &dependency;
 
 	VkResult result = vkCreateRenderPass(this->device, &renderPassInfo, nullptr, &this->renderPass);
 
@@ -205,9 +218,9 @@ void VulkanRenderer::initialiseDefaultRenderpass() {
 	this->mainDeletionQueue.pushFunction([=]() {
 		vkDestroyRenderPass(this->device, this->renderPass, nullptr);
 	});
-}
+}*/
 
-void VulkanRenderer::initialiseFramebuffers() {
+/*void VulkanRenderer::initialiseFramebuffers() {
 	VkFramebufferCreateInfo framebufferInfo{};
 	framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 	framebufferInfo.pNext = nullptr;
@@ -229,7 +242,7 @@ void VulkanRenderer::initialiseFramebuffers() {
 		attachments[1] = this->framedata.depthImageViews[i];
 
 		framebufferInfo.pAttachments = attachments.data();
-		framebufferInfo.attachmentCount = 2;
+		framebufferInfo.attachmentCount = attachments.size();
 
 		VkResult result = vkCreateFramebuffer(this->device, &framebufferInfo, nullptr, &this->framebuffers[i]);
 
@@ -243,7 +256,7 @@ void VulkanRenderer::initialiseFramebuffers() {
 			vkDestroyImageView(this->device, this->swapchainImageViews[i], nullptr);
 		});
 	}
-}
+}*/
 
 void VulkanRenderer::initialiseSyncStructures() {
 	VkFenceCreateInfo fenceCreateInfo{};
@@ -286,7 +299,15 @@ void VulkanRenderer::initialiseSyncStructures() {
 			abort();
 		}
 
+		result = vkCreateSemaphore(this->device, &semaphoreCreateInfo, nullptr, &this->framedata.deferredSemaphores[i]);
+
+		if (result) {
+			std::cout << "Detected Vulkan error while creating deferred semaphore: " << result << std::endl;
+			abort();
+		}
+
 		this->mainDeletionQueue.pushFunction([=]() {
+			vkDestroySemaphore(this->device, this->framedata.deferredSemaphores[i], nullptr);
 			vkDestroySemaphore(this->device, this->framedata.presentSemaphores[i], nullptr);
 			vkDestroySemaphore(this->device, this->framedata.renderSemaphores[i], nullptr);
 		});
@@ -314,7 +335,41 @@ void VulkanRenderer::initialiseSyncStructures() {
 }
 
 void VulkanRenderer::initialisePipelines() {
+	VkSamplerCreateInfo samplerCreateInfo{};
+	samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	samplerCreateInfo.pNext = nullptr;
+	samplerCreateInfo.magFilter = VK_FILTER_NEAREST;
+	samplerCreateInfo.minFilter = VK_FILTER_NEAREST;
+	samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerCreateInfo.mipLodBias = 0.0f;
+	samplerCreateInfo.maxAnisotropy = 1.0f;
+	samplerCreateInfo.minLod = 0.0f;
+	samplerCreateInfo.maxLod = 1.0f;
+	samplerCreateInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+
+	vkCreateSampler(device, &samplerCreateInfo, nullptr, &this->framebufferAttachmentSampler);
+
+	this->initialiseDeferredPipeline();
 	this->initialisePhongPipeline();
+
+	// Create default sampler
+	VkSamplerCreateInfo samplerInfo = VulkanUtility::samplerCreateInfo(VK_FILTER_LINEAR);
+	vkCreateSampler(this->device, &samplerInfo, nullptr, &this->defaultSampler);
+
+	/*VkRenderPassCreateInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.pNext = nullptr;
+	renderPassInfo.attachmentCount = 0;
+	renderPassInfo.pAttachments = nullptr;
+	renderPassInfo.subpassCount = 0;
+	renderPassInfo.pSubpasses = nullptr;
+	renderPassInfo.dependencyCount = 0;
+	renderPassInfo.pDependencies = nullptr;
+
+	vkCreateRenderPass(device, &renderPassInfo, nullptr, &this->imguiRenderPass);*/
 }
 
 void VulkanRenderer::initialiseImgui() {
@@ -367,7 +422,7 @@ void VulkanRenderer::initialiseImgui() {
 	initInfo.ImageCount = 3;
 	initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
-	ImGui_ImplVulkan_Init(&initInfo, this->renderPass);
+	ImGui_ImplVulkan_Init(&initInfo, this->imguiRenderPass);
 
 	VulkanUtility::immediateSubmit(this->device, this->imageTransferQueue, this->imageTransferContext, [&](VkCommandBuffer cmd) {
 		ImGui_ImplVulkan_CreateFontsTexture(cmd);
@@ -400,9 +455,9 @@ void VulkanRenderer::initialiseGlobalDescriptors() {
 	vkCreateDescriptorSetLayout(this->device, &setInfo, nullptr, &this->sceneSetLayout);
 
 	std::vector<VkDescriptorPoolSize> sizes = {
-		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10 },
-		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10 },
-		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10 }
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 100 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 100 },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100 }
 	};
 
 	VkDescriptorPoolCreateInfo poolInfo{};
@@ -471,13 +526,13 @@ void VulkanRenderer::drawObjects(VkCommandBuffer cmd, std::vector<ModelRenderCom
 	memcpy(data, &cameraData, sizeof(GPUCameraData));
 	vmaUnmapMemory(this->allocator, this->framedata.cameraBuffers[this->getCurrentFrameIndex()].allocation);
 
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipeline.pipeline);
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->deferredPipeline.pipeline);
 	
 	std::array<VkDescriptorSet, 1> sceneDescriptorSets = {
 		this->framedata.globalDescriptors[this->getCurrentFrameIndex()]
 	};
 
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipelineLayout, 0, sceneDescriptorSets.size(), sceneDescriptorSets.data(), 0, nullptr);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->deferredPipelineLayout, 0, sceneDescriptorSets.size(), sceneDescriptorSets.data(), 0, nullptr);
 
 	glm::vec3 modelPos = glm::vec3{ 0, 0, 0};
 	glm::mat4 meshMatrix = glm::translate(glm::mat4{1.0f}, modelPos);
@@ -485,7 +540,7 @@ void VulkanRenderer::drawObjects(VkCommandBuffer cmd, std::vector<ModelRenderCom
 	PushConstants pushConstants{};
 	pushConstants.renderMatrix = meshMatrix;
 
-	vkCmdPushConstants(cmd, this->phongPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
+	vkCmdPushConstants(cmd, this->deferredPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pushConstants);
 
 	VkDeviceSize offset = 0;
 	std::array<VkDeviceSize, 3> offsets = {
@@ -510,7 +565,7 @@ void VulkanRenderer::drawObjects(VkCommandBuffer cmd, std::vector<ModelRenderCom
 
 			auto* material = &this->materials.at(materialIds->at(i));
 
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipelineLayout, 1, 1, &material->materialDescriptorSet, 0, nullptr);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->deferredPipelineLayout, 1, 1, &material->materialDescriptorSet, 0, nullptr);
 
 			vkCmdBindIndexBuffer(cmd, model.IndexBuffers[i].buffer, offset, VK_INDEX_TYPE_UINT32);
 			vkCmdBindVertexBuffers(cmd, 0, vertexBuffers.size(), vertexBuffers.data(), offsets.data());
@@ -525,7 +580,7 @@ size_t VulkanRenderer::addMaterial(Material&& material, std::vector<AllocatedIma
 	allocInfo.pNext = nullptr;
 	allocInfo.descriptorPool = this->descriptorPool;
 	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &this->phongPipeline.pipelineSetLayout;
+	allocInfo.pSetLayouts = &this->deferredPipeline.pipelineSetLayout;
 
 	VkResult result = vkAllocateDescriptorSets(this->device, &allocInfo, &material.materialDescriptorSet);
 
@@ -684,8 +739,8 @@ void VulkanRenderer::initialise(const VulkanDetails* vulkanDetails, QueueDetails
 	this->initialiseFramedataStructures();
 	this->initialiseSwapchain();
 	this->initialiseCommands();
-	this->initialiseDefaultRenderpass();
-	this->initialiseFramebuffers();
+	//this->initialiseDefaultRenderpass();
+	//this->initialiseFramebuffers();
 	this->initialiseSyncStructures();
 
 	this->lightingSystem.initialise(FRAME_OVERLAP);
@@ -700,12 +755,12 @@ void VulkanRenderer::initialise(const VulkanDetails* vulkanDetails, QueueDetails
 
 	DirectionalLightCreateInfo directionalLightCreateInfo{};
 	directionalLightCreateInfo.baseColour = { 0.8, 0.8, 0.8, 0.0 };
-	directionalLightCreateInfo.direction = { 0.0, 0.0, 1.0, 0.0 };
+	directionalLightCreateInfo.direction = { 0.0, 0.0, 1.0, 0.0 }; 
 	this->lightingSystem.addDirectionLight(directionalLightCreateInfo);
 
 	this->initialiseGlobalDescriptors();
 	this->initialisePipelines();
-	this->initialiseImgui();
+	//this->initialiseImgui();
 }
 
 void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderComponents, std::vector<ModelResource>* modelResourceIds, std::vector<size_t>* ids, Camera* camera) {
@@ -738,19 +793,19 @@ void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderCompone
 	}
 
 	// We are sure command buffer is finished executing as previous frame finished processing. We can result the command buffer
-	result = vkResetCommandBuffer(this->framedata.mainCommandBuffers[index], 0);
+	result = vkResetCommandBuffer(this->framedata.deferredMainCommandBuffers[index], 0);
 
 	if (result) {
 		std::cout << "Detected Vulkan error while resetting the main command buffer: " << result << std::endl;
 		abort();
 	}
 
-	ImGui::Render();
+	//ImGui::Render();
 
-	VkCommandBuffer cmd = this->framedata.mainCommandBuffers[index];
+	VkCommandBuffer deferredCmd = this->framedata.deferredMainCommandBuffers[index];
 	VkCommandBufferBeginInfo cmdBeginInfo = VulkanUtility::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-	result = vkBeginCommandBuffer(cmd, &cmdBeginInfo);
+	
+	result = vkBeginCommandBuffer(deferredCmd, &cmdBeginInfo);
 
 	if (result) {
 		std::cout << "Detected Vulkan error while beginning command buffer in draw function: " << result << std::endl;
@@ -763,40 +818,41 @@ void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderCompone
 
 	VkClearValue depthClear{};
 	depthClear.depthStencil.depth = 1.0f;
+	depthClear.depthStencil.stencil = 1;
 
 	// Begin main render pass
 	VkRenderPassBeginInfo renderPassInfo{};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	renderPassInfo.pNext = nullptr;
 
-	renderPassInfo.renderPass = this->renderPass;
+	renderPassInfo.renderPass = this->deferredPipeline.framebuffer.renderPass;
 	// Offset of x = 0 & y = 0
 	renderPassInfo.renderArea.offset = { 0, 0 };
-	renderPassInfo.renderArea.extent = { WIDTH, HEIGHT };
-	renderPassInfo.framebuffer = this->framebuffers[index];
+	renderPassInfo.renderArea.extent = { this->deferredPipeline.framebuffer.width, this->deferredPipeline.framebuffer.height };
+	renderPassInfo.framebuffer = this->deferredPipeline.framebuffer.framebuffer[index];
 
-	std::array<VkClearValue, 2> clearValues = {
-		clearValue, depthClear
+	std::array<VkClearValue, 4> clearValues = {
+		clearValue, clearValue, clearValue, depthClear
 	};
 
 	// Connect clear values
 	renderPassInfo.clearValueCount = clearValues.size();
 	renderPassInfo.pClearValues = clearValues.data();
 
-	vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBeginRenderPass(deferredCmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	this->drawObjects(cmd, modelRenderComponents, modelResourceIds, ids, camera);
+	this->drawObjects(deferredCmd, modelRenderComponents, modelResourceIds, ids, camera);
 
 	/*glm::vec3 camPos = {0.0f, 0.0f, -2.0f};
 	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
 	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1920.0f / 1080.0f, 0.1f, 200.0f);
 	projection[1][1] *= -1;*/
 
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+	//ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 
-	vkCmdEndRenderPass(cmd);
+	vkCmdEndRenderPass(deferredCmd);
 
-	result = vkEndCommandBuffer(cmd);
+	result = vkEndCommandBuffer(deferredCmd);
 
 	if (result) {
 		std::cout << "Detected Vulkan error while ending command buffer in draw function: " << result << std::endl;
@@ -804,12 +860,81 @@ void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderCompone
 	}
 
 	// Prepare to submit the command buffer to the graphcis queue
-	VkSubmitInfo submit = VulkanUtility::submitInfo(&cmd);
-
+	VkSubmitInfo submit = VulkanUtility::submitInfo(&deferredCmd);
 	VkPipelineStageFlags waitState = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 	submit.pWaitDstStageMask = &waitState;
 	submit.waitSemaphoreCount = 1;
 	submit.pWaitSemaphores = &this->framedata.presentSemaphores[index];
+	submit.signalSemaphoreCount = 1;
+	submit.pSignalSemaphores = &this->framedata.deferredSemaphores[index];
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &deferredCmd;
+	vkQueueSubmit(this->graphicsQueue, 1, &submit, VK_NULL_HANDLE);
+
+	// Draw to actual framebuffers
+	result = vkResetCommandBuffer(this->framedata.lightingMainCommandBuffers[index], 0);
+
+	if (result) {
+		std::cout << "Detected Vulkan error while resetting the main command buffer: " << result << std::endl;
+		abort();
+	}
+
+	//ImGui::Render();
+
+	VkCommandBuffer lightingCmd = this->framedata.lightingMainCommandBuffers[index];
+	cmdBeginInfo = VulkanUtility::commandBufferBeginInfo(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+	result = vkBeginCommandBuffer(lightingCmd, &cmdBeginInfo);
+
+	if (result) {
+		std::cout << "Detected Vulkan error while beginning command buffer in draw function: " << result << std::endl;
+		abort();
+	}
+	
+	VkRenderPassBeginInfo lightingRenderPassInfo{};
+	lightingRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	lightingRenderPassInfo.pNext = nullptr;
+
+	lightingRenderPassInfo.renderPass = this->phongPipeline.framebuffer.renderPass;
+	// Offset of x = 0 & y = 0
+	lightingRenderPassInfo.renderArea.offset = { 0, 0 };
+	lightingRenderPassInfo.renderArea.extent = { this->phongPipeline.framebuffer.width, this->phongPipeline.framebuffer.height };
+	lightingRenderPassInfo.framebuffer = this->phongPipeline.framebuffer.framebuffer[index];
+
+	std::array<VkClearValue, 2> lightingClearValues = {
+		clearValue, depthClear
+	};
+
+	// Connect clear values
+	lightingRenderPassInfo.clearValueCount = lightingClearValues.size();
+	lightingRenderPassInfo.pClearValues = lightingClearValues.data();
+
+	std::array<VkDescriptorSet, 1> sceneDescriptorSets = {
+		this->framedata.globalDescriptors[this->getCurrentFrameIndex()]
+	};
+
+	vkCmdBeginRenderPass(lightingCmd, &lightingRenderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBindDescriptorSets(lightingCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->deferredPipelineLayout, 0, sceneDescriptorSets.size(), sceneDescriptorSets.data(), 0, nullptr);
+	vkCmdBindDescriptorSets(lightingCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipelineLayout, 1, 1, &this->phongPipeline.pipelineDescriptors[index], 0, nullptr);
+	vkCmdBindPipeline(lightingCmd, VK_PIPELINE_BIND_POINT_GRAPHICS, this->phongPipeline.pipeline);
+	vkCmdDraw(lightingCmd, 3, 1, 0, 0);
+
+	vkCmdEndRenderPass(lightingCmd);
+
+	result = vkEndCommandBuffer(lightingCmd);
+
+	if (result) {
+		std::cout << "Detected Vulkan error while ending command buffer in draw function: " << result << std::endl;
+		abort();
+	}
+
+	// Prepare to submit the command buffer to the graphcis queue
+	submit = VulkanUtility::submitInfo(&lightingCmd);
+
+	waitState = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	submit.pWaitDstStageMask = &waitState;
+	submit.waitSemaphoreCount = 1;
+	submit.pWaitSemaphores = &this->framedata.deferredSemaphores[index];
 	submit.signalSemaphoreCount = 1;
 	submit.pSignalSemaphores = &this->framedata.renderSemaphores[index];
 
@@ -830,7 +955,7 @@ void VulkanRenderer::draw(std::vector<ModelRenderComponents>* modelRenderCompone
 	presentInfo.pWaitSemaphores = &this->framedata.renderSemaphores[index];
 	presentInfo.waitSemaphoreCount = 1;
 	presentInfo.pImageIndices = &swapchainImageIndex;
-
+	
 	result = vkQueuePresentKHR(this->graphicsQueue, &presentInfo);
 
 	if (result) {
@@ -871,7 +996,7 @@ size_t VulkanRenderer::uploadModelMaterials(std::vector<MaterialInfo>* materials
 
 void VulkanRenderer::cleanup() {
 	vkWaitForFences(this->device, this->framedata.renderFences.size(), this->framedata.renderFences.data(), true, 1000000000);
-	phongPipeline.writePipelineCacheFile(this->device, true);
+	//phongPipeline.writePipelineCacheFile(this->device, true);
 
 	this->mainDeletionQueue.flush();
 }
@@ -880,8 +1005,8 @@ void VulkanRenderer::initialisePhongPipeline() {
 	// Setup shader information
 	ShaderInfo shaderInfo{};
 	shaderInfo.flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-	shaderInfo.vertexShaderPath = "resources/shaders/vertex.vert";
-	shaderInfo.fragmentShaderPath = "resources/shaders/fragment.frag";
+	shaderInfo.vertexShaderPath = "resources/shaders/phong.vert";
+	shaderInfo.fragmentShaderPath = "resources/shaders/phong.frag";
 
 	PipelineBuilder pipelineBuilder;
 	pipelineBuilder.addShaders(this->device, &shaderInfo);
@@ -902,10 +1027,24 @@ void VulkanRenderer::initialisePhongPipeline() {
 	pipelineBuilder.multisampling = VulkanUtility::multisamplingStateCreateInfo();
 	pipelineBuilder.colorBlendAttachment = VulkanUtility::colorBlendAttachmentState();
 
+	pipelineBuilder.setupFramebuffer({ .width = WIDTH, .height = HEIGHT });
+
 	// Setup descriptor sets and push constrants
 	// Must create pipeline set layout with builder before creating pipeline layout
-	
-	// Phong diffuse texture
+	VkExtent3D extent{};
+	extent.depth = 1;
+	extent.width = WIDTH;
+	extent.height = HEIGHT;
+
+	// Setup framebuffer and depth buffer
+	pipelineBuilder.addFramebufferAttachment(this->device, this->swapchainImageViews, this->swapchainImageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, extent, FRAME_OVERLAP);
+	pipelineBuilder.addFramebufferAttachment(this->device, this->allocator, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, extent, FRAME_OVERLAP);
+
+	// Position texture
+	pipelineBuilder.addPipelineDescriptorBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT);
+	// Normal texture
+	pipelineBuilder.addPipelineDescriptorBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT);
+	// Albedo texture
 	pipelineBuilder.addPipelineDescriptorBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT);
 
 	auto pipelineSetLayout = pipelineBuilder.createPipelineSetLayout(this->device, FRAME_OVERLAP, this->descriptorPool);
@@ -936,6 +1075,119 @@ void VulkanRenderer::initialisePhongPipeline() {
 
 	pipelineBuilder.pipelineLayout = this->phongPipelineLayout;
 
+	pipelineBuilder.rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+	pipelineBuilder.rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+	VkPipelineDepthStencilStateCreateInfo depthStencil = VulkanUtility::depthStencilCreateInfo(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+	pipelineBuilder.depthStencil = depthStencil;
+
+	this->phongPipeline = pipelineBuilder.buildPipeline(this->device, PipelineUsage::LightingPipelineUsage, FRAME_OVERLAP);
+
+	this->mainDeletionQueue.pushFunction([=]() {
+		vkDestroyPipeline(this->device, this->phongPipeline.pipeline, nullptr);
+		vkDestroyPipelineLayout(this->device, this->phongPipelineLayout, nullptr);
+	});
+
+	// Update image descriptor sets to connect deferred framebuffer images to input
+
+	for (auto i = 0; i < FRAME_OVERLAP; i++) {
+		// Position
+		auto* positionImage = &this->deferredPipeline.framebuffer.framebufferAttachments[POSITION_ATTACHMENT_INDEX][i].image;
+		VkDescriptorImageInfo positionImageInfo = VulkanUtility::descriptorimageInfo(this->framebufferAttachmentSampler, positionImage->imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		// Normal
+		auto* normalImage = &this->deferredPipeline.framebuffer.framebufferAttachments[NORMAL_ATTACHMENT_INDEX][i].image;
+		VkDescriptorImageInfo normalImageInfo = VulkanUtility::descriptorimageInfo(this->framebufferAttachmentSampler, normalImage->imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		// Albedo
+		auto* albedoImage = &this->deferredPipeline.framebuffer.framebufferAttachments[ALBEDO_ATTACHMENT_INDEX][i].image;
+		VkDescriptorImageInfo albedoImageInfo = VulkanUtility::descriptorimageInfo(this->framebufferAttachmentSampler, albedoImage->imageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	
+		auto descriptor = this->phongPipeline.pipelineDescriptors[i];
+
+		std::array<VkWriteDescriptorSet, 3> writes = {
+			VulkanUtility::writeDescriptorImage(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, descriptor, &positionImageInfo, POSITION_ATTACHMENT_INDEX),
+			VulkanUtility::writeDescriptorImage(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, descriptor, &normalImageInfo, NORMAL_ATTACHMENT_INDEX),
+			VulkanUtility::writeDescriptorImage(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, descriptor, &albedoImageInfo, ALBEDO_ATTACHMENT_INDEX)
+		};
+
+		vkUpdateDescriptorSets(this->device, writes.size(), writes.data(), 0, nullptr);
+	}
+}
+
+void VulkanRenderer::initialiseDeferredPipeline() {
+	// Setup shader information
+	ShaderInfo shaderInfo{};
+	shaderInfo.flags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+	shaderInfo.vertexShaderPath = "resources/shaders/deferred.vert";
+	shaderInfo.fragmentShaderPath = "resources/shaders/deferred.frag";
+
+	PipelineBuilder pipelineBuilder;
+	pipelineBuilder.addShaders(this->device, &shaderInfo);
+
+	pipelineBuilder.vertexInputInfo = VulkanUtility::vertexInputStateCreateInfo();
+	pipelineBuilder.inputAssembly = VulkanUtility::inputAssemblyCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+	pipelineBuilder.viewport.x = 0.0f;
+	pipelineBuilder.viewport.y = 0.0f;
+	pipelineBuilder.viewport.width = WIDTH;
+	pipelineBuilder.viewport.height = HEIGHT;
+	pipelineBuilder.viewport.minDepth = 0.0f;
+	pipelineBuilder.viewport.maxDepth = 1.0f;
+
+	pipelineBuilder.scissor.offset = { 0, 0 };
+	pipelineBuilder.scissor.extent = { WIDTH, HEIGHT };
+
+	pipelineBuilder.rasterizer = VulkanUtility::rasterizationStateCreateInfo(VK_POLYGON_MODE_FILL);
+	pipelineBuilder.multisampling = VulkanUtility::multisamplingStateCreateInfo();
+	pipelineBuilder.colorBlendAttachment = VulkanUtility::colorBlendAttachmentState();
+
+	pipelineBuilder.setupFramebuffer({ .width = WIDTH, .height = HEIGHT});
+
+	// Setup descriptor sets and push constrants
+	// Must create pipeline set layout with builder before creating pipeline layout
+	VkExtent3D extent{};
+	extent.depth = 1;
+	extent.width = WIDTH;
+	extent.height = HEIGHT;
+
+	// Position
+	pipelineBuilder.addFramebufferAttachment(this->device, this->allocator, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, extent, FRAME_OVERLAP);
+	// Normals
+	pipelineBuilder.addFramebufferAttachment(this->device, this->allocator, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, extent, FRAME_OVERLAP);
+	// Albedo
+	pipelineBuilder.addFramebufferAttachment(this->device, this->allocator, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, extent, FRAME_OVERLAP);
+	// Depth
+	pipelineBuilder.addFramebufferAttachment(this->device, this->allocator, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, extent, FRAME_OVERLAP);
+
+	// Albedo texture from model
+	pipelineBuilder.addPipelineDescriptorBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+	auto pipelineSetLayout = pipelineBuilder.createPipelineSetLayout(this->device, FRAME_OVERLAP, this->descriptorPool);
+
+	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = VulkanUtility::pipelineLayoutCreateInfo();
+
+	std::array<VkDescriptorSetLayout, 2> setLayouts = {
+		this->sceneSetLayout,
+		pipelineSetLayout
+	};
+
+	VkPushConstantRange pushConstant{};
+	pushConstant.offset = 0;
+	pushConstant.size = sizeof(PushConstants);
+	pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+	pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+
+	pipelineLayoutCreateInfo.pSetLayouts = setLayouts.data();
+	pipelineLayoutCreateInfo.setLayoutCount = setLayouts.size();
+
+	VkResult result = vkCreatePipelineLayout(this->device, &pipelineLayoutCreateInfo, nullptr, &this->deferredPipelineLayout);
+	if (result) {
+		std::cout << "Detected Vulkan error while creating deferred pipeline layout: " << result << std::endl;
+		abort();
+	}
+
+	pipelineBuilder.pipelineLayout = this->deferredPipelineLayout;
+
 	// Setup vertex inputs
 	VertexInputDescription vertexDescription = ModelVertexInputDescription::getVertexDescription();
 	pipelineBuilder.vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
@@ -944,18 +1196,18 @@ void VulkanRenderer::initialisePhongPipeline() {
 	pipelineBuilder.vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
 	pipelineBuilder.vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
 
+	pipelineBuilder.rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+	pipelineBuilder.rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
 	VkPipelineDepthStencilStateCreateInfo depthStencil = VulkanUtility::depthStencilCreateInfo(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
 	pipelineBuilder.depthStencil = depthStencil;
 
-	this->phongPipeline = pipelineBuilder.buildPipeline(this->device, this->renderPass);
+	this->deferredPipeline = pipelineBuilder.buildPipeline(this->device, PipelineUsage::DeferredPipelineUsage, FRAME_OVERLAP);
 
 	this->mainDeletionQueue.pushFunction([=]() {
-		vkDestroyPipeline(this->device, this->phongPipeline.pipeline, nullptr);
-		vkDestroyPipelineLayout(this->device, this->phongPipelineLayout, nullptr);
+		vkDestroyPipeline(this->device, this->deferredPipeline.pipeline, nullptr);
+		vkDestroyPipelineLayout(this->device, this->deferredPipelineLayout, nullptr);
 	});
-
-	VkSamplerCreateInfo samplerInfo = VulkanUtility::samplerCreateInfo(VK_FILTER_LINEAR);
-	vkCreateSampler(this->device, &samplerInfo, nullptr, &this->defaultSampler);
 }
 
 VmaAllocator VulkanRenderer::getVmaAllocator() {
