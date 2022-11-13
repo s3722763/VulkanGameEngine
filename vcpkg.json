@@ -1,0 +1,13 @@
+{
+  "name": "GameEngine",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "assimp",
+    "Bullet",
+    "imgui",
+    "unofficial-vulkan-memory-allocator",
+    "glm",
+    "SDL2",
+    "stb"
+  ]
+}
