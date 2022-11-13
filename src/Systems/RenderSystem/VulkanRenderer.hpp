@@ -1,13 +1,13 @@
 #pragma once
 #include "VkBootstrap.h"
-#include <sdl/SDL.h>
-#include <sdl/SDL_vulkan.h>
-#include <sdl/SDL_video.h>
+#include <sdl2/SDL.h>
+#include <sdl2/SDL_vulkan.h>
+#include <sdl2/SDL_video.h>
 #include <vector>
 #include <map>
 #include "../../Components/RenderComponents/VulkanPipeline.hpp"
 #include "VulkanUtility.hpp"
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 #include "../../Components/ModelComponent.h"
 #include "../../Components/RenderComponents/Material.hpp"
 #include "../../Components/RenderComponents/Camera.hpp"

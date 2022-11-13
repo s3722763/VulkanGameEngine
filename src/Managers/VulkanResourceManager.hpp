@@ -1,12 +1,12 @@
 #pragma once
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 #include "../Components/ModelComponent.h"
 #include "../Systems/RenderSystem/VulkanTypes.hpp"
 #include "../Systems/RenderSystem/VulkanUtility.hpp"
 #include "../Systems/RenderSystem/VkBootstrap.h"
 #include <iostream>
 #include <vector>
-#include <sdl/SDL_video.h>
+#include <sdl2/SDL_video.h>
 
 class VulkanResourceManager {
 	std::vector<ModelRenderComponents> modelRenderBuffers;

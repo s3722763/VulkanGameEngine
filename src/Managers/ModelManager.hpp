@@ -1,7 +1,7 @@
 #pragma once
 #include "../Components/ModelComponent.h"
 
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 #include <assimp/scene.h>
 #include "../Systems/RenderSystem/VulkanTypes.hpp"
 #include "../Components/RenderComponents/Material.hpp"

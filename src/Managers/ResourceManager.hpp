@@ -1,6 +1,6 @@
 #pragma once
 #include "VulkanResourceManager.hpp"
-#include <vma/vk_mem_alloc.h>
+#include <vk_mem_alloc.h>
 #include "ModelManager.hpp"
 #include "../Components/RenderComponents/VulkanPipeline.hpp"
 #include "../Systems/RenderSystem/VulkanTypes.hpp"

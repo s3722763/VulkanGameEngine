@@ -1,8 +1,6 @@
 #include "ResourceManager.hpp"
-#include "ResourceManager.hpp"
-#include "ResourceManager.hpp"
 #include <string>
-#include <sdl/SDL_video.h>
+#include <sdl2/SDL_video.h>
 
 ResourceManager::ResourceManager() {
 	this->modelManager = std::make_unique<ModelManager>();

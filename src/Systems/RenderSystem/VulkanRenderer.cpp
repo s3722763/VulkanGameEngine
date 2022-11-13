@@ -11,10 +11,10 @@
 #include <VulkanTypes.hpp>
 #include "../../Components/ModelComponent.h"
 #include <glm/gtx/transform.hpp>
-#include <stb/stb_image.h>
-#include "../../imgui/imgui.h"
-#include "../../imgui/imgui_impl_sdl.h"
-#include "../../imgui/imgui_impl_vulkan.h"
+#include <stb_image.h>
+#include <imgui.h>
+#include <imgui_impl_sdl.h>
+#include <imgui_impl_vulkan.h>
 
 constexpr int WIDTH = 1920;
 constexpr int HEIGHT = 1080;

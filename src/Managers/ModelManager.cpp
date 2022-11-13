@@ -5,7 +5,7 @@
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
-#include <stb/stb_image.h>
+#include <stb_image.h>
 
 LoadModelResults ModelManager::loadModel(const std::string& directory, const std::string& modelFileName, const std::string& identifier) {
 	LoadModelResults result{};

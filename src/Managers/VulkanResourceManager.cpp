@@ -1,7 +1,7 @@
 #include "VulkanResourceManager.hpp"
 #include "VulkanResourceManager.hpp"
 #include "VulkanResourceManager.hpp"
-#include <sdl/SDL_vulkan.h>
+#include <sdl2/SDL_vulkan.h>
 
 void VulkanResourceManager::initialiseVulkan(SDL_Window* window) {
 	vkb::InstanceBuilder instanceBuilder{};

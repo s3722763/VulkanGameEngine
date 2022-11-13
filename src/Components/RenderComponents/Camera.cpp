@@ -1,6 +1,6 @@
 #include "Camera.hpp"
 #include <glm/ext/matrix_transform.hpp>
-#include <sdl/SDL_scancode.h>
+#include <SDL_scancode.h>
 
 void Camera::updateCamera(float deltaS, const uint8_t* currentKeyStates) {
     const float speed = 10 * deltaS;

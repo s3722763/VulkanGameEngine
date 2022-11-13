@@ -1,11 +1,9 @@
 #include "World.hpp"
-#include <sdl/SDL_vulkan.h>
+#include <sdl2/SDL_vulkan.h>
 #include <chrono>
-#include "imgui/imgui_impl_sdl.h"
-#include "imgui/imgui_impl_vulkan.h"
-#include "imgui/imgui.h"
-
-
+#include <imgui_impl_sdl.h>
+#include <imgui_impl_vulkan.h>
+#include <imgui.h>
 
 size_t World::addEntity(EntityCreateInfo* info) {
 	AddEntityInfo addEntityInfo{};
